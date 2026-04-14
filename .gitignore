@@ -1,0 +1,40 @@
+# build
+/build/
+/out/
+/bin/
+/lib/
+CMakeCache.txt
+CMakeFiles/
+compile_commands.json
+
+# editor
+.vscode/
+.idea/
+
+# models
+/models/
+/*.bin
+/*.gguf
+/*.onnx
+
+# audio / temp
+/tests/input/
+/tests/inputs/
+/tests/tmp/
+/*.wav
+/*.mp3
+/*.m4a
+/*.flac
+/*.ogg
+/*.aac
+/*.wma
+
+# windows / misc
+*.exe
+*.dll
+*.a
+*.obj
+*.o
+*.log
+Thumbs.db
+.DS_Store
