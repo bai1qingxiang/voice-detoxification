@@ -1,0 +1,199 @@
+#include "nlp/toxicity_detector.h"
+
+#include <algorithm>
+#include <cctype>
+#include <sstream>
+#include <iostream>
+
+namespace nlp {
+
+namespace {
+
+std::string to_lower(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+        [](unsigned char c) { return std::tolower(c); });
+    return s;
+}
+
+std::string remove_non_alphanumeric(const std::string& s) {
+    std::string result;
+    for (char c : s) {
+        if (std::isalnum(c) || c == ' ') {
+            result += c;
+        }
+    }
+    return result;
+}
+
+} // namespace
+
+ToxicityDetector::ToxicityDetector() {
+    initialize_toxic_wordlist();
+    index_words();
+}
+
+ToxicityDetector::~ToxicityDetector() = default;
+
+void ToxicityDetector::initialize_toxic_wordlist() {
+    toxic_words_ = {
+        // High toxicity - severe slurs and hate speech (based on research on online toxicity)
+        {"damn", ToxicityLevel::LOW, "profanity"},
+        {"hell", ToxicityLevel::LOW, "profanity"},
+        {"crap", ToxicityLevel::MEDIUM, "profanity"},
+        {"bullshit", ToxicityLevel::HIGH, "profanity"},
+        {"asshole", ToxicityLevel::HIGH, "insult"},
+        {"bastard", ToxicityLevel::HIGH, "insult"},
+        {"idiot", ToxicityLevel::HIGH, "insult"},
+        {"stupid", ToxicityLevel::HIGH, "insult"},
+        {"dumb", ToxicityLevel::MEDIUM, "insult"},
+        {"moron", ToxicityLevel::HIGH, "insult"},
+        {"retard", ToxicityLevel::HIGH, "slur"},
+        {"crazy", ToxicityLevel::LOW, "ableist"},
+        {"insane", ToxicityLevel::LOW, "ableist"},
+
+        // Hate speech and discrimination (based on research literature on harmful language)
+        {"racist", ToxicityLevel::HIGH, "hate_speech"},
+        {"sexist", ToxicityLevel::HIGH, "hate_speech"},
+        {"homophobic", ToxicityLevel::HIGH, "hate_speech"},
+
+        // Threat and harassment indicators
+        {"kill", ToxicityLevel::HIGH, "threat"},
+        {"die", ToxicityLevel::MEDIUM, "threat"},
+        {"hurt", ToxicityLevel::MEDIUM, "threat"},
+        {"rape", ToxicityLevel::HIGH, "threat"},
+        {"violence", ToxicityLevel::HIGH, "threat"},
+
+        // Self-harm indicators
+        {"suicide", ToxicityLevel::HIGH, "self_harm"},
+        {"cutting", ToxicityLevel::HIGH, "self_harm"},
+        {"depressed", ToxicityLevel::LOW, "mental_health"},
+        {"suicidal", ToxicityLevel::HIGH, "self_harm"},
+    };
+}
+
+void ToxicityDetector::index_words() {
+    for (size_t i = 0; i < toxic_words_.size(); ++i) {
+        const std::string normalized = to_lower(toxic_words_[i].word);
+        word_index_[normalized].push_back(i);
+    }
+}
+
+std::string ToxicityDetector::normalize_text(const std::string& text) const {
+    std::string normalized = to_lower(text);
+    normalized = remove_non_alphanumeric(normalized);
+    return normalized;
+}
+
+std::vector<ToxicityMatch> ToxicityDetector::find_toxic_words(
+    const std::string& normalized,
+    const std::string& original) {
+
+    std::vector<ToxicityMatch> matches;
+
+    std::istringstream iss(normalized);
+    std::string word;
+    size_t current_pos = 0;
+
+    while (std::getline(iss, word, ' ')) {
+        if (word.empty()) continue;
+
+        auto it = word_index_.find(word);
+        if (it != word_index_.end()) {
+            for (size_t idx : it->second) {
+                const auto& toxic_word = toxic_words_[idx];
+
+                // Find position in original text (approximate)
+                size_t pos = original.find(word);
+                if (pos != std::string::npos) {
+                    ToxicityMatch match;
+                    match.matched_text = word;
+                    match.start_pos = pos;
+                    match.end_pos = pos + word.length();
+                    match.level = toxic_word.level;
+                    match.category = toxic_word.category;
+                    matches.push_back(match);
+                }
+            }
+        }
+        current_pos += word.length() + 1;
+    }
+
+    return matches;
+}
+
+ToxicityLevel ToxicityDetector::compute_overall_level(
+    const std::vector<ToxicityMatch>& matches) {
+
+    if (matches.empty()) {
+        return ToxicityLevel::CLEAN;
+    }
+
+    ToxicityLevel max_level = ToxicityLevel::CLEAN;
+    for (const auto& match : matches) {
+        if (match.level > max_level) {
+            max_level = match.level;
+        }
+    }
+
+    // If high toxicity found, use that
+    if (max_level == ToxicityLevel::HIGH) {
+        return ToxicityLevel::HIGH;
+    }
+
+    // Count medium level matches
+    int medium_count = 0;
+    for (const auto& match : matches) {
+        if (match.level == ToxicityLevel::MEDIUM) {
+            medium_count++;
+        }
+    }
+
+    // If multiple medium matches, escalate to high
+    if (medium_count >= 2) {
+        return ToxicityLevel::HIGH;
+    }
+
+    if (max_level == ToxicityLevel::MEDIUM) {
+        return ToxicityLevel::MEDIUM;
+    }
+
+    return max_level;
+}
+
+ToxicityResult ToxicityDetector::analyze(const std::string& text) {
+    ToxicityResult result;
+    result.original_text = text;
+    result.cleaned_text = text;
+
+    if (text.empty()) {
+        return result;
+    }
+
+    std::string normalized = normalize_text(text);
+    auto matches = find_toxic_words(normalized, text);
+
+    result.overall_level = compute_overall_level(matches);
+    result.matches = matches;
+
+    // Set confidence based on number and severity of matches
+    if (matches.empty()) {
+        result.confidence = 1.0f;
+    } else {
+        result.confidence = std::max(0.0f, 1.0f - (matches.size() * 0.1f));
+    }
+
+    // Generate cleaned text by censoring toxic words
+    result.cleaned_text = text;
+    for (const auto& match : matches) {
+        if (match.level >= ToxicityLevel::MEDIUM) {
+            std::string censor(match.end_pos - match.start_pos, '*');
+            result.cleaned_text.replace(match.start_pos,
+                                       match.end_pos - match.start_pos,
+                                       censor);
+        }
+    }
+
+    return result;
+}
+
+} // namespace nlp

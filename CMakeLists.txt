@@ -59,12 +59,14 @@ endif()
 # 收集自己的源码
 # =========================
 file(GLOB_RECURSE VOICE_DETOX_SOURCES CONFIGURE_DEPENDS
-    ${CMAKE_SOURCE_DIR}/src/*.cpp
+    ${CMAKE_SOURCE_DIR}/src/**/*.cpp
 )
 
 if(NOT VOICE_DETOX_SOURCES)
     message(FATAL_ERROR "No source files found under src/")
 endif()
+
+message(STATUS "Found source files: ${VOICE_DETOX_SOURCES}")
 
 add_library(voice_detox_core STATIC ${VOICE_DETOX_SOURCES})
 
