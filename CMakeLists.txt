@@ -66,7 +66,10 @@ if(NOT VOICE_DETOX_SOURCES)
     message(FATAL_ERROR "No source files found under src/")
 endif()
 
-message(STATUS "Found source files: ${VOICE_DETOX_SOURCES}")
+message(STATUS "Found source files:")
+foreach(src ${VOICE_DETOX_SOURCES})
+    message(STATUS "  - ${src}")
+endforeach()
 
 add_library(voice_detox_core STATIC ${VOICE_DETOX_SOURCES})
 

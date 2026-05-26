@@ -270,7 +270,7 @@ WhisperResult WhisperEngine::transcribe_wav(const std::string& wav_path, int n_t
               << ", samples=" << wav.pcmf32.size() << std::endl;
 
     whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
-    params.n_threads = 1 ;
+    params.n_threads = resolve_thread_count(n_threads);
     params.print_progress = false;
     params.print_realtime = false;
     params.print_timestamps = false;
