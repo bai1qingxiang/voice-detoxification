@@ -1,5 +1,8 @@
 # build
 /build/
+/build_probe/
+/build_simple*/
+/build_verify*/
 /out/
 /bin/
 /lib/
@@ -10,6 +13,7 @@ compile_commands.json
 # editor
 .vscode/
 .idea/
+.venv/
 
 # models
 /models/
@@ -21,6 +25,7 @@ compile_commands.json
 /tests/input/
 /tests/inputs/
 /tests/tmp/
+/detox_eval*.json
 /*.wav
 /*.mp3
 /*.m4a
@@ -36,5 +41,6 @@ compile_commands.json
 *.obj
 *.o
 *.log
+AGENTS.md
 Thumbs.db
 .DS_Store

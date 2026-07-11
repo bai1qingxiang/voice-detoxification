@@ -139,11 +139,13 @@ TTSResult PiperEngine::synthesize(const std::string& text) {
     std::ostringstream script;
     script << R"(#!/usr/bin/env python3
 import sys
-import json
 import wave
 
 try:
-    from piper.voice import PiperVoice
+    try:
+        from piper.voice import PiperVoice
+    except ImportError:
+        from piper import PiperVoice
 
     model_path = sys.argv[1]
     text = sys.argv[2]
@@ -185,22 +187,14 @@ except Exception as e:
 
     const int rc = std::system(cmd.str().c_str());
     if (rc != 0) {
-        std::cerr << "[WARNING] Piper command exited with code " << rc << std::endl;
+        fs::remove(script_path);
+        throw std::runtime_error("Piper synthesis command failed with code " + std::to_string(rc));
     }
 
     // Check if output WAV exists
     if (!fs::exists(output_wav)) {
-        std::cerr << "[WARNING] Piper synthesis failed, falling back to dummy audio" << std::endl;
-
-        // Create dummy audio data for demonstration
-        result.sample_rate = 22050;
-        result.num_channels = 1;
-        result.duration_seconds = static_cast<float>(text.length()) / 15.0f;  // Rough estimate
-
-        int num_samples = static_cast<int>(result.sample_rate * result.duration_seconds);
-        result.audio_samples.resize(num_samples, 0);  // Silent audio
-
-        return result;
+        fs::remove(script_path);
+        throw std::runtime_error("Piper synthesis did not create an output WAV file.");
     }
 
     // Read the generated WAV file
@@ -212,7 +206,9 @@ except Exception as e:
 
         // Clean up
         fs::remove(output_wav);
+        fs::remove(script_path);
     } catch (const std::exception& e) {
+        fs::remove(script_path);
         std::cerr << "[ERROR] Failed to read WAV: " << e.what() << std::endl;
         throw;
     }

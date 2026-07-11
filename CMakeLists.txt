@@ -34,6 +34,12 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 option(VOICE_DETOX_BUILD_APP "Build main application" ON)
 option(VOICE_DETOX_ENABLE_WHISPER "Enable whisper.cpp" ON)
 
+# ccache can hang with MinGW/Windows in some environments while building ggml.
+# Keep the default path boring and reliable; users can still opt in explicitly.
+if(WIN32 AND NOT DEFINED GGML_CCACHE)
+    set(GGML_CCACHE OFF CACHE BOOL "Use ccache when building ggml/whisper.cpp")
+endif()
+
 # =========================
 # 路径
 # =========================
@@ -58,8 +64,15 @@ endif()
 # =========================
 # 收集自己的源码
 # =========================
-file(GLOB_RECURSE VOICE_DETOX_SOURCES CONFIGURE_DEPENDS
-    ${CMAKE_SOURCE_DIR}/src/**/*.cpp
+set(VOICE_DETOX_SOURCES
+    ${CMAKE_SOURCE_DIR}/src/audio/audio_decoder.cpp
+    ${CMAKE_SOURCE_DIR}/src/audio/voice_analyzer.cpp
+    ${CMAKE_SOURCE_DIR}/src/audio/wav_writer.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/logger.cpp
+    ${CMAKE_SOURCE_DIR}/src/nlp/text_detoxifier.cpp
+    ${CMAKE_SOURCE_DIR}/src/nlp/toxicity_detector.cpp
+    ${CMAKE_SOURCE_DIR}/src/stt/whisper_engine.cpp
+    ${CMAKE_SOURCE_DIR}/src/tts/piper_engine.cpp
 )
 
 if(NOT VOICE_DETOX_SOURCES)

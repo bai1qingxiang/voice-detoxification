@@ -34,6 +34,30 @@ Clean Text Output + Detailed Report
 
 ## Building
 
+### Simplest Windows Run
+
+From PowerShell in the project root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run_simple.ps1
+```
+
+This builds the app and runs the sample audio at `tests\inputs\sample.m4a`.
+The output audio is written to `simple_output.wav`.
+
+Useful options:
+
+```powershell
+# Only transcribe and detoxify text, skip TTS
+powershell -ExecutionPolicy Bypass -File scripts\run_simple.ps1 -SkipTts
+
+# Censor toxic words with asterisks
+powershell -ExecutionPolicy Bypass -File scripts\run_simple.ps1 -CensorOnly -SkipTts
+
+# Use your own audio
+powershell -ExecutionPolicy Bypass -File scripts\run_simple.ps1 -Audio path\to\audio.mp3 -Output clean.wav
+```
+
 ### Requirements
 
 - C++17 compiler (g++, clang, MSVC)
@@ -167,6 +191,34 @@ Supports:
 - HuggingFace toxicity models
 - Perspective API integration
 - Custom model fine-tuning
+
+## Detoxification Accuracy Evaluation
+
+Use `scripts/evaluate_detox_accuracy.py` to score detoxification quality with an
+independent ML toxicity model. The default evaluator is Detoxify `unbiased`
+(`roberta-base` trained on the Jigsaw unintended-bias toxicity task).
+
+Single pair:
+```bash
+python scripts/evaluate_detox_accuracy.py \
+  --original original_transcript.txt \
+  --detoxified detoxified_transcript.txt
+```
+
+Batch CSV/JSONL/JSON:
+```bash
+python scripts/evaluate_detox_accuracy.py \
+  --pairs detox_results.csv \
+  --original-column original \
+  --detoxified-column detoxified \
+  --output detox_eval.json
+```
+
+Key metrics:
+- **Detox success rate**: originally toxic text that falls below the toxicity threshold after detoxification
+- **Residual toxic rate**: originally toxic text that remains above the threshold
+- **Average toxicity reduction**: original toxicity score minus detoxified toxicity score
+- **Regression rate**: cases where detoxification increased the toxicity score
 
 ## Implementation Details
 

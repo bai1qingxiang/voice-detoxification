@@ -1,6 +1,7 @@
 # Python Dependencies for Voice Detoxification
 
 # Core ML/NLP
+detoxify>=0.5.2
 transformers>=4.30.0
 torch>=2.0.0
 numpy>=1.21.0

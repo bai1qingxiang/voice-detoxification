@@ -178,7 +178,7 @@ int main(int argc, char** argv) {
 
         if (skip_tts) {
             log_info("TTS skipped (--skip-tts)");
-            std::cout << "\nProcessing complete. Output saved to: " << output_path << "\n";
+            std::cout << "\nProcessing complete. TTS was skipped, so no clean audio file was generated.\n";
             return 0;
         }
 
@@ -187,6 +187,8 @@ int main(int argc, char** argv) {
         std::cout << std::string(70, '=') << "\n\n";
 
         log_info("Initializing Piper TTS...");
+        bool tts_completed = false;
+        bool voice_restore_completed = false;
         try {
             tts::PiperEngine tts_engine(tts_model);
 
@@ -241,18 +243,16 @@ int main(int argc, char** argv) {
                 // Write to file
                 audio::WAVWriter::write_wav(output_path, voice_adjusted,
                                            tts_result.sample_rate, 1);
+                voice_restore_completed = true;
             } else {
                 // Write to file without voice restoration
                 audio::WAVWriter::write_wav(output_path, tts_result.audio_samples,
                                            tts_result.sample_rate, 1);
             }
+            tts_completed = true;
         } catch (const std::exception& e) {
-            std::cerr << "[WARNING] TTS synthesis failed: " << e.what() << "\n";
-            std::cerr << "Creating silent audio placeholder...\n";
-
-            // Create dummy audio
-            std::vector<int16_t> dummy(22050, 0);  // 1 second of silence
-            audio::WAVWriter::write_wav(output_path, dummy, 22050, 1);
+            throw std::runtime_error(
+                "Clean audio generation failed. No output audio was written: " + std::string(e.what()));
         }
 
         std::cout << std::string(70, '=') << "\n";
@@ -263,8 +263,8 @@ int main(int argc, char** argv) {
         std::cout << "  ✓ Transcription: Complete\n";
         std::cout << "  ✓ Detoxification: " << (detoxified.replacements_made + detoxified.censored_words)
                  << " issue(s) fixed\n";
-        std::cout << "  ✓ TTS Synthesis: Complete\n";
-        if (!skip_voice_restore) {
+        std::cout << "  ✓ TTS Synthesis: " << (tts_completed ? "Complete" : "Skipped") << "\n";
+        if (!skip_voice_restore && voice_restore_completed) {
             std::cout << "  ✓ Voice Restoration: Complete\n";
         }
         std::cout << "  ✓ Output: " << output_path << "\n\n";

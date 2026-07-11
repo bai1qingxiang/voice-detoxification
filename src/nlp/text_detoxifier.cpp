@@ -19,6 +19,20 @@ std::string toxicity_to_string(ToxicityLevel level) {
     }
 }
 
+void replace_all(std::string& text, const std::string& from, const std::string& to) {
+    size_t pos = 0;
+    while ((pos = text.find(from, pos)) != std::string::npos) {
+        text.replace(pos, from.length(), to);
+        pos += to.length();
+    }
+}
+
+void cleanup_replacement_artifacts(std::string& text) {
+    replace_all(text, "broken up", "broken");
+    replace_all(text, "frustrating it", "this is frustrating");
+    replace_all(text, "you person", "you");
+}
+
 } // namespace
 
 TextDetoxifier::TextDetoxifier(const DetoxificationOptions& options)
@@ -29,15 +43,20 @@ TextDetoxifier::~TextDetoxifier() = default;
 std::vector<std::string> TextDetoxifier::get_alternatives(const std::string& toxic_word) {
     // Map of toxic words to suggested alternatives
     static const std::map<std::string, std::vector<std::string>> alternatives = {
-        {"damn", {"darn", "dang"}},
+        {"damn", {"frustrating"}},
         {"hell", {"heck"}},
         {"bullshit", {"nonsense", "rubbish"}},
-        {"asshole", {"jerk", "inconsiderate person"}},
-        {"bastard", {"jerk"}},
-        {"idiot", {"foolish person", "silly"}},
-        {"stupid", {"unwise", "not bright"}},
-        {"dumb", {"foolish"}},
-        {"moron", {"foolish person"}},
+        {"fuck", {""}},
+        {"fucked", {"broken"}},
+        {"fucking", {"very"}},
+        {"shit", {"issue", "mess"}},
+        {"shitty", {"poor"}},
+        {"asshole", {"inconsiderate person"}},
+        {"bastard", {"person"}},
+        {"idiot", {"person"}},
+        {"stupid", {"unhelpful"}},
+        {"dumb", {"unclear"}},
+        {"moron", {"person"}},
         {"retard", {""},},  // No good alternative; should censor
         {"crazy", {"unusual", "wild"}},
         {"insane", {"extreme", "wild"}},
@@ -81,12 +100,10 @@ std::string TextDetoxifier::apply_censoring(
         });
 
     for (const auto& match : sorted_matches) {
-        if (match.level >= ToxicityLevel::MEDIUM) {
-            std::string censor(match.end_pos - match.start_pos, '*');
-            result.replace(match.start_pos,
-                          match.end_pos - match.start_pos,
-                          censor);
-        }
+        std::string censor(match.end_pos - match.start_pos, '*');
+        result.replace(match.start_pos,
+                      match.end_pos - match.start_pos,
+                      censor);
     }
 
     return result;
@@ -127,6 +144,12 @@ TextDetoxifier::DetoxifiedText TextDetoxifier::detoxify(const std::string& text)
 
             if (match.category == "profanity" && options_.remove_profanity) {
                 should_process = true;
+            } else if (match.category == "insult" && options_.remove_insults) {
+                should_process = true;
+            } else if (match.category == "slur" && options_.remove_slurs) {
+                should_process = true;
+            } else if (match.category == "ableist" && options_.remove_ableist) {
+                should_process = true;
             } else if (match.category == "hate_speech" && options_.remove_hate_speech) {
                 should_process = true;
             } else if (match.category == "threat" && options_.remove_threats) {
@@ -154,6 +177,8 @@ TextDetoxifier::DetoxifiedText TextDetoxifier::detoxify(const std::string& text)
                 result.censored_words++;
             }
         }
+
+        cleanup_replacement_artifacts(result.detoxified);
     }
 
     // Re-analyze to get final toxicity level

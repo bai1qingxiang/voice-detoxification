@@ -40,6 +40,11 @@ void ToxicityDetector::initialize_toxic_wordlist() {
         {"damn", ToxicityLevel::LOW, "profanity"},
         {"hell", ToxicityLevel::LOW, "profanity"},
         {"crap", ToxicityLevel::MEDIUM, "profanity"},
+        {"fuck", ToxicityLevel::HIGH, "profanity"},
+        {"fucked", ToxicityLevel::HIGH, "profanity"},
+        {"fucking", ToxicityLevel::HIGH, "profanity"},
+        {"shit", ToxicityLevel::HIGH, "profanity"},
+        {"shitty", ToxicityLevel::HIGH, "profanity"},
         {"bullshit", ToxicityLevel::HIGH, "profanity"},
         {"asshole", ToxicityLevel::HIGH, "insult"},
         {"bastard", ToxicityLevel::HIGH, "insult"},
@@ -90,33 +95,47 @@ std::vector<ToxicityMatch> ToxicityDetector::find_toxic_words(
 
     std::vector<ToxicityMatch> matches;
 
-    std::istringstream iss(normalized);
-    std::string word;
-    size_t current_pos = 0;
+    (void)normalized;
 
-    while (std::getline(iss, word, ' ')) {
-        if (word.empty()) continue;
+    size_t token_start = std::string::npos;
+    std::string word;
+
+    auto flush_token = [&]() {
+        if (word.empty()) {
+            return;
+        }
 
         auto it = word_index_.find(word);
         if (it != word_index_.end()) {
             for (size_t idx : it->second) {
                 const auto& toxic_word = toxic_words_[idx];
 
-                // Find position in original text (approximate)
-                size_t pos = original.find(word);
-                if (pos != std::string::npos) {
-                    ToxicityMatch match;
-                    match.matched_text = word;
-                    match.start_pos = pos;
-                    match.end_pos = pos + word.length();
-                    match.level = toxic_word.level;
-                    match.category = toxic_word.category;
-                    matches.push_back(match);
-                }
+                ToxicityMatch match;
+                match.matched_text = word;
+                match.start_pos = token_start;
+                match.end_pos = token_start + word.length();
+                match.level = toxic_word.level;
+                match.category = toxic_word.category;
+                matches.push_back(match);
             }
         }
-        current_pos += word.length() + 1;
+
+        word.clear();
+        token_start = std::string::npos;
+    };
+
+    for (size_t i = 0; i < original.size(); ++i) {
+        unsigned char c = static_cast<unsigned char>(original[i]);
+        if (std::isalnum(c)) {
+            if (token_start == std::string::npos) {
+                token_start = i;
+            }
+            word += static_cast<char>(std::tolower(c));
+        } else {
+            flush_token();
+        }
     }
+    flush_token();
 
     return matches;
 }
@@ -184,6 +203,11 @@ ToxicityResult ToxicityDetector::analyze(const std::string& text) {
 
     // Generate cleaned text by censoring toxic words
     result.cleaned_text = text;
+    std::sort(matches.begin(), matches.end(),
+        [](const ToxicityMatch& a, const ToxicityMatch& b) {
+            return a.start_pos > b.start_pos;
+        });
+
     for (const auto& match : matches) {
         if (match.level >= ToxicityLevel::MEDIUM) {
             std::string censor(match.end_pos - match.start_pos, '*');

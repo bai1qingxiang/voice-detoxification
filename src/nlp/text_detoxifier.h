@@ -9,6 +9,9 @@ namespace nlp {
 struct DetoxificationOptions {
     bool censor_only = false;  // If true, just replace with *, if false, try to replace with alternatives
     bool remove_profanity = true;
+    bool remove_insults = true;
+    bool remove_slurs = true;
+    bool remove_ableist = true;
     bool remove_hate_speech = true;
     bool remove_threats = true;
     bool remove_self_harm = true;
