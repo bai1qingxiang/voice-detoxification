@@ -4,6 +4,10 @@
 #include <string>
 #include <filesystem>
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
+#include <sstream>
+#include <unordered_set>
 
 #include "common/logger.h"
 #include "stt/whisper_engine.h"
@@ -70,6 +74,136 @@ std::string resolve_audio_path_for_analysis(const std::string& audio_path) {
     }
 
     return find_first_audio_file_in_directory("tests/input");
+}
+
+std::string quote_file_arg(const std::string& s) {
+    return "\"" + s + "\"";
+}
+
+std::string quote_executable_if_needed(const std::string& s) {
+    if (s.find(' ') != std::string::npos || s.find('\t') != std::string::npos) {
+        return "\"" + s + "\"";
+    }
+    return s;
+}
+
+std::string normalize_path_for_cmd(std::string s) {
+    for (char& c : s) {
+        if (c == '\\') {
+            c = '/';
+        }
+    }
+    return s;
+}
+
+void convert_original_audio_to_wav(
+    const std::string& input_path,
+    const std::string& output_path,
+    const std::string& ffmpeg_path) {
+
+    const fs::path output_fs_path(output_path);
+    if (output_fs_path.has_parent_path()) {
+        fs::create_directories(output_fs_path.parent_path());
+    }
+
+    const std::string ffmpeg_cmd_path = normalize_path_for_cmd(ffmpeg_path);
+    const std::string input_cmd_path = normalize_path_for_cmd(fs::absolute(input_path).string());
+    const std::string output_cmd_path = normalize_path_for_cmd(fs::absolute(output_path).string());
+
+    std::ostringstream cmd;
+    cmd << quote_executable_if_needed(ffmpeg_cmd_path)
+        << " -y -hide_banner -loglevel error"
+        << " -i " << quote_file_arg(input_cmd_path)
+        << " -vn"
+        << " -c:a pcm_s16le "
+        << quote_file_arg(output_cmd_path);
+
+    std::cout << "[DEBUG] ffmpeg copy-clean cmd: " << cmd.str() << std::endl;
+
+    const int rc = std::system(cmd.str().c_str());
+    if (rc != 0 || !fs::exists(output_path)) {
+        throw std::runtime_error("Failed to write clean WAV copy with ffmpeg.");
+    }
+}
+
+std::string strip_whisper_annotations(const std::string& text) {
+    std::string result;
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '*') {
+            const size_t end = text.find('*', i + 1);
+            if (end != std::string::npos) {
+                const std::string segment = text.substr(i + 1, end - i - 1);
+                const bool looks_like_annotation =
+                    !segment.empty() &&
+                    segment.size() <= 40 &&
+                    std::any_of(segment.begin(), segment.end(), [](unsigned char c) {
+                        return std::isalpha(c) != 0;
+                    });
+
+                if (looks_like_annotation) {
+                    i = end;
+                    continue;
+                }
+            }
+        }
+
+        result.push_back(text[i]);
+    }
+
+    return result;
+}
+
+std::vector<std::string> extract_lower_words(const std::string& text) {
+    std::vector<std::string> words;
+    std::string current;
+
+    for (unsigned char c : text) {
+        if (std::isalpha(c)) {
+            current.push_back(static_cast<char>(std::tolower(c)));
+        } else if (!current.empty()) {
+            words.push_back(current);
+            current.clear();
+        }
+    }
+
+    if (!current.empty()) {
+        words.push_back(current);
+    }
+
+    return words;
+}
+
+bool should_skip_tts_for_detoxified_text(
+    const nlp::TextDetoxifier::DetoxifiedText& detoxified) {
+
+    const int toxic_issue_count = detoxified.replacements_made + detoxified.censored_words;
+    if (toxic_issue_count == 0) {
+        return false;
+    }
+
+    const auto original_words = extract_lower_words(strip_whisper_annotations(detoxified.original));
+    if (original_words.empty()) {
+        return true;
+    }
+
+    const float toxic_ratio =
+        static_cast<float>(toxic_issue_count) / static_cast<float>(original_words.size());
+
+    const auto cleaned_words = extract_lower_words(strip_whisper_annotations(detoxified.detoxified));
+    static const std::unordered_set<std::string> filler_words = {
+        "ah", "eh", "er", "hmm", "hm", "huh", "oh", "uh", "um",
+        "you", "your", "yours", "yeah", "yep", "yes", "no",
+        "sigh", "clock", "ticking"
+    };
+
+    int meaningful_words = 0;
+    for (const auto& word : cleaned_words) {
+        if (filler_words.find(word) == filler_words.end()) {
+            meaningful_words++;
+        }
+    }
+
+    return meaningful_words == 0 || toxic_ratio >= 0.35f;
 }
 
 } // namespace
@@ -182,6 +316,32 @@ int main(int argc, char** argv) {
             return 0;
         }
 
+        if (detoxified.original_toxicity == nlp::ToxicityLevel::CLEAN) {
+            const std::string source_audio_path = resolve_audio_path_for_analysis(audio_path);
+            if (source_audio_path.empty()) {
+                throw std::runtime_error("Could not find source audio to preserve clean input.");
+            }
+
+            log_info("Input is already clean; preserving original audio content.");
+            convert_original_audio_to_wav(source_audio_path, output_path, ffmpeg_path);
+
+            std::cout << std::string(70, '=') << "\n";
+            std::cout << "PROCESSING COMPLETE\n";
+            std::cout << std::string(70, '=') << "\n\n";
+            std::cout << "Summary:\n";
+            std::cout << "  ✓ Transcription: Complete\n";
+            std::cout << "  ✓ Detoxification: No toxic content detected\n";
+            std::cout << "  ✓ Audio Preservation: Original clean audio copied to WAV\n";
+            std::cout << "  ✓ Output: " << output_path << "\n\n";
+            return 0;
+        }
+
+        if (should_skip_tts_for_detoxified_text(detoxified)) {
+            std::cout << "\nProcessing complete. The remaining detoxified text is not suitable for speech synthesis,\n";
+            std::cout << "so no clean audio file was generated.\n";
+            return 0;
+        }
+
         std::cout << std::string(70, '=') << "\n";
         std::cout << "STAGE 3: TEXT-TO-SPEECH SYNTHESIS\n";
         std::cout << std::string(70, '=') << "\n\n";
@@ -228,7 +388,11 @@ int main(int argc, char** argv) {
                 }
 
                 std::cout << "Original voice characteristics:\n";
-                std::cout << "  Mean pitch: " << original_voice.mean_pitch << " Hz\n";
+                if (original_voice.mean_pitch > 0.0f) {
+                    std::cout << "  Mean pitch: " << original_voice.mean_pitch << " Hz\n";
+                } else {
+                    std::cout << "  Mean pitch: unavailable\n";
+                }
                 std::cout << "  Energy: " << original_voice.energy_mean << "\n";
                 std::cout << "  Pitch variance: " << original_voice.pitch_variance << "\n\n";
 

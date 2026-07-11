@@ -44,6 +44,29 @@ powershell -ExecutionPolicy Bypass -File scripts\run_simple.ps1
 
 This builds the app and runs the sample audio at `tests\inputs\sample.m4a`.
 The output audio is written to `simple_output.wav`.
+By default, the simple runner skips the old voice-restoration step because this
+project does not include a real voice-cloning model; the result is a cleaner,
+more natural Piper voice.
+
+Shortcut command:
+
+```powershell
+.\detox.bat tests\inputs\sample.m4a clean_output.wav
+```
+
+You do not need to copy every input audio file into a project folder. You can:
+
+- Double-click `detox.bat` or run `.\detox.bat` to choose an audio file in a file picker.
+- Drag an audio file onto `detox.bat`.
+- Pass any audio path from the command line.
+
+If you do not provide an output path, the clean audio is written next to the
+input file with `_clean.wav` added to the name.
+If the detected content is mostly toxic and the detoxified text has no useful
+speech left, TTS is skipped and no new clean audio file is written.
+
+If you want to type `detox ...` without `.\detox.bat`, add this project folder
+to your Windows `PATH`, or create a desktop shortcut that runs `detox.bat`.
 
 Useful options:
 
@@ -55,7 +78,10 @@ powershell -ExecutionPolicy Bypass -File scripts\run_simple.ps1 -SkipTts
 powershell -ExecutionPolicy Bypass -File scripts\run_simple.ps1 -CensorOnly -SkipTts
 
 # Use your own audio
-powershell -ExecutionPolicy Bypass -File scripts\run_simple.ps1 -Audio path\to\audio.mp3 -Output clean.wav
+powershell -ExecutionPolicy Bypass -File scripts\run_simple.ps1 -Audio path\to\audio.mp3
+
+# Compare the optional light voice matching step
+powershell -ExecutionPolicy Bypass -File scripts\run_simple.ps1 -Audio path\to\audio.mp3 -Output clean.wav -RestoreVoice
 ```
 
 ### Requirements

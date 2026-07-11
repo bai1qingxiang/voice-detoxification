@@ -1,88 +1,83 @@
 #include "audio/voice_analyzer.h"
 
-#include <cmath>
 #include <algorithm>
-#include <numeric>
-#include <iostream>
+#include <cmath>
+#include <cstdint>
 #include <fstream>
+#include <numeric>
+#include <stdexcept>
+#include <string>
+#include <utility>
 
 namespace audio {
 
 namespace {
 
-// 简单的自相关基频检测
 float autocorrelation_pitch_detection(
     const std::vector<float>& signal,
     int sample_rate) {
 
-    if (signal.size() < 4096) {
-        return 100.0f;  // 默认基频
+    if (signal.size() < 1024 || sample_rate <= 0) {
+        return 0.0f;
     }
 
-    const int frame_size = 2048;
+    const int frame_size = std::min<int>(4096, static_cast<int>(signal.size()));
     std::vector<float> frame(signal.begin(), signal.begin() + frame_size);
 
-    // 标准化
-    float mean = std::accumulate(frame.begin(), frame.end(), 0.0f) / frame.size();
-    for (auto& s : frame) {
-        s -= mean;
+    const float mean = std::accumulate(frame.begin(), frame.end(), 0.0f) / frame.size();
+    for (auto& sample : frame) {
+        sample -= mean;
     }
 
-    // 计算自相关
-    std::vector<float> autocorr(frame_size / 2);
-    for (size_t lag = 0; lag < autocorr.size(); ++lag) {
-        float sum = 0.0f;
-        for (size_t i = 0; i < frame.size() - lag; ++i) {
-            sum += frame[i] * frame[i + lag];
+    float frame_energy = 0.0f;
+    for (float sample : frame) {
+        frame_energy += sample * sample;
+    }
+    if (frame_energy < 1.0e-6f) {
+        return 0.0f;
+    }
+
+    const int min_lag = std::max(1, sample_rate / 500);
+    const int max_lag = std::min(sample_rate / 50, frame_size - 2);
+    if (max_lag <= min_lag) {
+        return 0.0f;
+    }
+
+    float best_corr = 0.0f;
+    int best_lag = 0;
+    for (int lag = min_lag; lag <= max_lag; ++lag) {
+        float numerator = 0.0f;
+        float energy_a = 0.0f;
+        float energy_b = 0.0f;
+        for (int i = 0; i + lag < frame_size; ++i) {
+            numerator += frame[i] * frame[i + lag];
+            energy_a += frame[i] * frame[i];
+            energy_b += frame[i + lag] * frame[i + lag];
         }
-        autocorr[lag] = sum;
-    }
 
-    // 找到第一个显著峰值（对应基频）
-    float max_corr = autocorr[0];
-    int best_lag = 1;
-    const int min_lag = sample_rate / 500;  // 最大500Hz
-    const int max_lag = sample_rate / 50;   // 最小50Hz
+        const float denominator = std::sqrt(energy_a * energy_b);
+        if (denominator <= 1.0e-6f) {
+            continue;
+        }
 
-    for (int lag = min_lag; lag < std::min(max_lag, (int)autocorr.size()); ++lag) {
-        if (autocorr[lag] > max_corr * 0.5f && autocorr[lag] > autocorr[best_lag]) {
+        const float normalized_corr = numerator / denominator;
+        if (normalized_corr > best_corr) {
+            best_corr = normalized_corr;
             best_lag = lag;
         }
     }
 
-    float fundamental_freq = static_cast<float>(sample_rate) / best_lag;
+    if (best_lag <= 0 || best_corr < 0.30f ||
+        best_lag == min_lag || best_lag == max_lag) {
+        return 0.0f;
+    }
+
+    const float fundamental_freq = static_cast<float>(sample_rate) / best_lag;
+    if (fundamental_freq < 70.0f || fundamental_freq > 400.0f) {
+        return 0.0f;
+    }
+
     return fundamental_freq;
-}
-
-// 读取WAV文件
-std::pair<std::vector<int16_t>, int> read_wav_file_legacy(const std::string& path) {
-    std::ifstream file(path, std::ios::binary);
-    if (!file) {
-        throw std::runtime_error("Cannot open file: " + path);
-    }
-
-    // 跳过WAV头
-    file.seekg(24);
-    int sample_rate;
-    file.read(reinterpret_cast<char*>(&sample_rate), 4);
-
-    // 找到data块
-    file.seekg(0);
-    char chunk_id[4];
-    while (file.read(chunk_id, 4)) {
-        uint32_t size;
-        file.read(reinterpret_cast<char*>(&size), 4);
-
-        if (std::string(chunk_id, 4) == "data") {
-            std::vector<int16_t> samples(size / 2);
-            file.read(reinterpret_cast<char*>(samples.data()), size);
-            return {samples, sample_rate};
-        } else {
-            file.seekg(size, std::ios::cur);
-        }
-    }
-
-    throw std::runtime_error("No data chunk in WAV file");
 }
 
 std::pair<std::vector<int16_t>, int> read_wav_file(const std::string& path) {
@@ -97,7 +92,7 @@ std::pair<std::vector<int16_t>, int> read_wav_file(const std::string& path) {
         throw std::runtime_error("Invalid WAV file: missing RIFF chunk");
     }
 
-    uint32_t riff_size;
+    uint32_t riff_size = 0;
     file.read(reinterpret_cast<char*>(&riff_size), 4);
 
     char wave[4];
@@ -106,6 +101,9 @@ std::pair<std::vector<int16_t>, int> read_wav_file(const std::string& path) {
         throw std::runtime_error("Invalid WAV file: missing WAVE marker");
     }
 
+    uint16_t audio_format = 0;
+    uint16_t channels = 0;
+    uint16_t bits_per_sample = 0;
     int sample_rate = 0;
     std::vector<int16_t> samples;
 
@@ -116,30 +114,53 @@ std::pair<std::vector<int16_t>, int> read_wav_file(const std::string& path) {
             break;
         }
 
-        uint32_t size;
+        uint32_t size = 0;
         file.read(reinterpret_cast<char*>(&size), 4);
+        if (!file) {
+            break;
+        }
 
         const std::string id(chunk_id, 4);
         if (id == "fmt ") {
-            uint16_t audio_format = 0;
-            uint16_t channels = 0;
             file.read(reinterpret_cast<char*>(&audio_format), 2);
             file.read(reinterpret_cast<char*>(&channels), 2);
             file.read(reinterpret_cast<char*>(&sample_rate), 4);
 
-            if (size > 8) {
-                file.seekg(static_cast<std::streamoff>(size - 8), std::ios::cur);
+            uint32_t byte_rate = 0;
+            uint16_t block_align = 0;
+            file.read(reinterpret_cast<char*>(&byte_rate), 4);
+            file.read(reinterpret_cast<char*>(&block_align), 2);
+            file.read(reinterpret_cast<char*>(&bits_per_sample), 2);
+
+            if (size > 16) {
+                file.seekg(static_cast<std::streamoff>(size - 16), std::ios::cur);
             }
         } else if (id == "data") {
+            if (audio_format != 1 || bits_per_sample != 16 || channels == 0) {
+                throw std::runtime_error("Only 16-bit PCM WAV files are supported for voice analysis");
+            }
             if (size % sizeof(int16_t) != 0) {
                 throw std::runtime_error("Invalid WAV data chunk size");
             }
 
-            samples.resize(size / sizeof(int16_t));
-            file.read(reinterpret_cast<char*>(samples.data()), size);
+            std::vector<int16_t> raw(size / sizeof(int16_t));
+            file.read(reinterpret_cast<char*>(raw.data()), size);
+
+            if (channels == 1) {
+                samples = std::move(raw);
+            } else {
+                samples.reserve(raw.size() / channels);
+                for (size_t i = 0; i + channels <= raw.size(); i += channels) {
+                    int sum = 0;
+                    for (uint16_t channel = 0; channel < channels; ++channel) {
+                        sum += raw[i + channel];
+                    }
+                    samples.push_back(static_cast<int16_t>(sum / channels));
+                }
+            }
             break;
         } else {
-            file.seekg(size, std::ios::cur);
+            file.seekg(static_cast<std::streamoff>(size), std::ios::cur);
         }
 
         if (size % 2 == 1) {
@@ -150,7 +171,6 @@ std::pair<std::vector<int16_t>, int> read_wav_file(const std::string& path) {
     if (sample_rate <= 0) {
         throw std::runtime_error("No fmt chunk in WAV file");
     }
-
     if (samples.empty()) {
         throw std::runtime_error("No data chunk in WAV file");
     }
@@ -165,37 +185,38 @@ VoiceCharacteristics VoiceAnalyzer::analyze(
     int sample_rate) {
 
     VoiceCharacteristics chars;
-
     if (pcm_samples.empty()) {
         return chars;
     }
 
-    // 转换为浮点数
     std::vector<float> float_samples(pcm_samples.size());
     for (size_t i = 0; i < pcm_samples.size(); ++i) {
         float_samples[i] = static_cast<float>(pcm_samples[i]) / 32768.0f;
     }
 
-    // 计算基频
     chars.mean_pitch = autocorrelation_pitch_detection(float_samples, sample_rate);
 
-    // 计算能量
     float energy_sum = 0.0f;
-    float energy_sq_sum = 0.0f;
-    for (float s : float_samples) {
-        energy_sum += s * s;
+    for (float sample : float_samples) {
+        energy_sum += sample * sample;
     }
     chars.energy_mean = std::sqrt(energy_sum / float_samples.size());
-    chars.energy_variance = chars.energy_mean * 0.1f;  // 粗略估计
 
-    // 计算过零率
+    const auto frame_energy = compute_energy(pcm_samples);
+    if (!frame_energy.empty()) {
+        const float mean_energy = std::accumulate(frame_energy.begin(), frame_energy.end(), 0.0f) /
+                                  frame_energy.size();
+        float variance_sum = 0.0f;
+        for (float energy : frame_energy) {
+            const float delta = energy - mean_energy;
+            variance_sum += delta * delta;
+        }
+        chars.energy_variance = variance_sum / frame_energy.size();
+    }
+
     chars.zero_crossing_rate = compute_zcr(pcm_samples);
-
-    // 计算频谱质心
     chars.spectral_centroid = compute_spectral_centroid(pcm_samples, sample_rate);
-
-    // 估计基频方差
-    chars.pitch_variance = chars.mean_pitch * 0.1f;
+    chars.pitch_variance = chars.mean_pitch > 0.0f ? chars.mean_pitch * 0.1f : 0.0f;
 
     return chars;
 }
@@ -210,13 +231,17 @@ std::vector<float> VoiceAnalyzer::compute_energy(
     int frame_size) {
 
     std::vector<float> energy;
+    if (frame_size <= 0) {
+        return energy;
+    }
+
     for (size_t i = 0; i + frame_size <= samples.size(); i += frame_size) {
-        float e = 0.0f;
+        float frame_sum = 0.0f;
         for (int j = 0; j < frame_size; ++j) {
-            float s = static_cast<float>(samples[i + j]) / 32768.0f;
-            e += s * s;
+            const float sample = static_cast<float>(samples[i + j]) / 32768.0f;
+            frame_sum += sample * sample;
         }
-        energy.push_back(std::sqrt(e / frame_size));
+        energy.push_back(std::sqrt(frame_sum / frame_size));
     }
     return energy;
 }
@@ -225,8 +250,8 @@ float VoiceAnalyzer::estimate_fundamental_frequency(
     const std::vector<int16_t>& samples,
     int sample_rate) {
 
-    if (samples.size() < 4096) {
-        return 100.0f;
+    if (samples.size() < 1024) {
+        return 0.0f;
     }
 
     std::vector<float> float_samples(samples.size());
@@ -238,7 +263,9 @@ float VoiceAnalyzer::estimate_fundamental_frequency(
 }
 
 float VoiceAnalyzer::compute_zcr(const std::vector<int16_t>& samples) {
-    if (samples.size() < 2) return 0.0f;
+    if (samples.size() < 2) {
+        return 0.0f;
+    }
 
     int zero_crossings = 0;
     for (size_t i = 1; i < samples.size(); ++i) {
@@ -255,9 +282,8 @@ float VoiceAnalyzer::compute_spectral_centroid(
     const std::vector<int16_t>& samples,
     int sample_rate) {
 
-    // 简化：使用过零率作为频谱特性的代理
-    float zcr = compute_zcr(samples);
-    return zcr * sample_rate / 2.0f;  // 缩放到Hz
+    const float zcr = compute_zcr(samples);
+    return zcr * sample_rate / 2.0f;
 }
 
 std::vector<int16_t> VoiceConverter::transfer_voice_characteristics(
@@ -265,24 +291,26 @@ std::vector<int16_t> VoiceConverter::transfer_voice_characteristics(
     const VoiceCharacteristics& source_characteristics,
     int sample_rate) {
 
-    std::vector<int16_t> result = target_audio;
+    if (target_audio.empty()) {
+        return target_audio;
+    }
 
-    // 分析目标音频
-    VoiceCharacteristics target_chars = VoiceAnalyzer::analyze(target_audio, sample_rate);
+    const VoiceCharacteristics target_chars = VoiceAnalyzer::analyze(target_audio, sample_rate);
 
-    // 计算需要调整的因子
-    float pitch_shift = source_characteristics.mean_pitch / (target_chars.mean_pitch + 0.001f);
-    float energy_factor = (source_characteristics.energy_mean) /
-                         (target_chars.energy_mean + 0.001f);
+    float energy_factor = 1.0f;
+    if (source_characteristics.energy_mean > 0.001f &&
+        target_chars.energy_mean > 0.001f) {
+        energy_factor = source_characteristics.energy_mean / target_chars.energy_mean;
+    }
 
-    // 应用能量调整
-    result = adjust_energy(result, std::min(energy_factor, 2.0f));
+    if (!std::isfinite(energy_factor)) {
+        energy_factor = 1.0f;
+    }
 
-    // 应用基频调整（通过改变采样率）
-    float semitones = 12.0f * std::log2(pitch_shift);
-    result = adjust_pitch(result, semitones, sample_rate);
-
-    return result;
+    // This is not voice cloning. Avoid pitch/time resampling and only apply a
+    // small loudness match so the synthesized voice stays natural.
+    energy_factor = std::clamp(energy_factor, 0.85f, 1.15f);
+    return adjust_energy(target_audio, energy_factor);
 }
 
 std::vector<int16_t> VoiceConverter::adjust_pitch(
@@ -290,31 +318,23 @@ std::vector<int16_t> VoiceConverter::adjust_pitch(
     float pitch_shift_semitones,
     int sample_rate) {
 
-    // 简单的方法：改变采样速率来改变基频
-    // 这会同时改变速度和基频，所以我们需要时间拉伸来补偿
-    float pitch_factor = std::pow(2.0f, pitch_shift_semitones / 12.0f);
-
-    // 首先改变基频
-    std::vector<int16_t> pitched = audio;
-    if (pitch_factor > 0.5f && pitch_factor < 2.0f) {
-        // 简单的线性插值重采样
-        std::vector<int16_t> resampled;
-        float pos = 0.0f;
-
-        while (pos < static_cast<int>(audio.size()) - 1) {
-            int idx = static_cast<int>(pos);
-            float frac = pos - idx;
-
-            float val = (1.0f - frac) * audio[idx] + frac * audio[idx + 1];
-            resampled.push_back(static_cast<int16_t>(std::clamp(val, -32768.0f, 32767.0f)));
-
-            pos += pitch_factor;
-        }
-
-        pitched = resampled;
+    (void)sample_rate;
+    const float pitch_factor = std::pow(2.0f, pitch_shift_semitones / 12.0f);
+    if (pitch_factor <= 0.5f || pitch_factor >= 2.0f) {
+        return audio;
     }
 
-    return pitched;
+    std::vector<int16_t> resampled;
+    float pos = 0.0f;
+    while (pos < static_cast<int>(audio.size()) - 1) {
+        const int idx = static_cast<int>(pos);
+        const float frac = pos - idx;
+        const float val = (1.0f - frac) * audio[idx] + frac * audio[idx + 1];
+        resampled.push_back(static_cast<int16_t>(std::clamp(val, -32768.0f, 32767.0f)));
+        pos += pitch_factor;
+    }
+
+    return resampled;
 }
 
 std::vector<int16_t> VoiceConverter::adjust_speed(
@@ -325,17 +345,13 @@ std::vector<int16_t> VoiceConverter::adjust_speed(
         return audio;
     }
 
-    // 简单的重采样方法
     std::vector<int16_t> result;
     float pos = 0.0f;
-
     while (pos < static_cast<int>(audio.size()) - 1) {
-        int idx = static_cast<int>(pos);
-        float frac = pos - idx;
-
-        float val = (1.0f - frac) * audio[idx] + frac * audio[idx + 1];
+        const int idx = static_cast<int>(pos);
+        const float frac = pos - idx;
+        const float val = (1.0f - frac) * audio[idx] + frac * audio[idx + 1];
         result.push_back(static_cast<int16_t>(std::clamp(val, -32768.0f, 32767.0f)));
-
         pos += speed_factor;
     }
 
@@ -348,7 +364,7 @@ std::vector<int16_t> VoiceConverter::adjust_energy(
 
     std::vector<int16_t> result(audio.size());
     for (size_t i = 0; i < audio.size(); ++i) {
-        float val = static_cast<float>(audio[i]) * energy_factor;
+        const float val = static_cast<float>(audio[i]) * energy_factor;
         result[i] = static_cast<int16_t>(std::clamp(val, -32768.0f, 32767.0f));
     }
     return result;
@@ -358,8 +374,9 @@ std::vector<int16_t> VoiceConverter::time_stretch(
     const std::vector<int16_t>& audio,
     float stretch_factor) {
 
-    // 简单的时间拉伸（改变速度但保持基频）
-    // 这是一个简化版本，真正的实现需要更复杂的算法
+    if (stretch_factor <= 0.0f) {
+        return audio;
+    }
     return adjust_speed(audio, 1.0f / stretch_factor);
 }
 

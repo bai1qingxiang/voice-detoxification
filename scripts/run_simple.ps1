@@ -1,9 +1,11 @@
 param(
     [string]$Model = "models\ggml-small.bin",
-    [string]$Audio = "tests\inputs\sample.m4a",
-    [string]$Output = "simple_output.wav",
+    [string]$Audio = "",
+    [string]$Output = "",
     [switch]$CensorOnly,
     [switch]$SkipTts,
+    [switch]$RestoreVoice,
+    [switch]$ChooseAudio,
     [switch]$RebuildThirdParty
 )
 
@@ -16,6 +18,62 @@ $ManualBuildDir = Join-Path $ProjectRoot "build_simple_manual"
 $ManualApp = Join-Path $ManualBuildDir "bin\voice_detox_app.exe"
 $CMakeBuildDir = Join-Path $ProjectRoot "build_simple"
 $CMakeApp = Join-Path $CMakeBuildDir "bin\voice_detox_app.exe"
+
+function Select-AudioFile {
+    Add-Type -AssemblyName System.Windows.Forms
+
+    $dialog = New-Object System.Windows.Forms.OpenFileDialog
+    $dialog.Title = "Choose audio file to detoxify"
+    $dialog.Filter = "Audio files (*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.aac;*.wma)|*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.aac;*.wma|All files (*.*)|*.*"
+    $dialog.Multiselect = $false
+
+    if ($dialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
+        throw "No audio file was selected."
+    }
+
+    return $dialog.FileName
+}
+
+function Get-DefaultOutputPath {
+    param([string]$AudioPath)
+
+    $resolvedAudio = Resolve-Path $AudioPath
+    $audioDir = Split-Path -Parent $resolvedAudio.Path
+    $audioName = [System.IO.Path]::GetFileNameWithoutExtension($resolvedAudio.Path)
+    return Join-Path $audioDir ($audioName + "_clean.wav")
+}
+
+function Resolve-AudioInputPath {
+    param([string]$AudioPath)
+
+    if ([System.IO.Path]::IsPathRooted($AudioPath)) {
+        return (Resolve-Path $AudioPath).Path
+    }
+
+    $fromCurrent = Join-Path (Get-Location) $AudioPath
+    if (Test-Path $fromCurrent) {
+        return (Resolve-Path $fromCurrent).Path
+    }
+
+    $fromProject = Join-Path $ProjectRoot $AudioPath
+    if (Test-Path $fromProject) {
+        return (Resolve-Path $fromProject).Path
+    }
+
+    throw "Audio file was not found: $AudioPath"
+}
+
+if ($ChooseAudio) {
+    $Audio = Select-AudioFile
+} elseif ([string]::IsNullOrWhiteSpace($Audio)) {
+    $Audio = "tests\inputs\sample.m4a"
+}
+
+$Audio = Resolve-AudioInputPath $Audio
+
+if ([string]::IsNullOrWhiteSpace($Output)) {
+    $Output = Get-DefaultOutputPath $Audio
+}
 
 function Test-ExistingWhisperLibraries {
     $required = @(
@@ -106,6 +164,8 @@ if ($CensorOnly) {
 }
 if ($SkipTts) {
     $runArgs += "--skip-tts"
+    $runArgs += "--skip-voice-restore"
+} elseif (-not $RestoreVoice) {
     $runArgs += "--skip-voice-restore"
 }
 $runArgs += $Model
