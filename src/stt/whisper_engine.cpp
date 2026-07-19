@@ -27,6 +27,7 @@ struct WavData {
     std::vector<float> pcmf32;
 };
 
+/// Reads a fixed-size little-endian value from a binary stream.
 template <typename T>
 T read_little_endian(std::ifstream& in) {
     T value{};
@@ -37,6 +38,7 @@ T read_little_endian(std::ifstream& in) {
     return value;
 }
 
+/// Returns whether a path uses a supported audio file extension.
 bool is_supported_audio_file(const fs::path& path) {
     if (!fs::is_regular_file(path)) {
         return false;
@@ -56,6 +58,7 @@ bool is_supported_audio_file(const fs::path& path) {
            ext == ".wma";
 }
 
+/// Finds the first supported audio file in a directory.
 std::string find_first_audio_file_in_directory(const fs::path& dir) {
     if (!fs::exists(dir) || !fs::is_directory(dir)) {
         return "";
@@ -70,6 +73,7 @@ std::string find_first_audio_file_in_directory(const fs::path& dir) {
     return "";
 }
 
+/// Resolves an explicit input or searches the default audio directories.
 std::string resolve_input_audio_path(const std::string& audio_path) {
     // 1) 传入的是存在的文件：直接用
     if (!audio_path.empty()) {
@@ -113,6 +117,7 @@ std::string resolve_input_audio_path(const std::string& audio_path) {
         "No supported audio file found in tests/inputs or tests/input.");
 }
 
+/// Parses a mono 16 kHz 16-bit PCM WAV into floating-point Whisper samples.
 WavData load_wav_pcm_s16le_mono_16k(const std::string& path) {
     std::ifstream in(path, std::ios::binary);
     if (!in) {
@@ -218,6 +223,7 @@ WavData load_wav_pcm_s16le_mono_16k(const std::string& path) {
     return out;
 }
 
+/// Chooses an explicit thread count or falls back to available hardware threads.
 int resolve_thread_count(int requested) {
     if (requested > 0) {
         return requested;
@@ -231,6 +237,7 @@ int resolve_thread_count(int requested) {
     return static_cast<int>(std::max(1u, hc));
 }
 
+/// Removes DC offset and safely normalizes speech RMS for recognition.
 void normalize_speech_level(std::vector<float>& samples) {
     if (samples.empty()) return;
 
@@ -259,6 +266,7 @@ void normalize_speech_level(std::vector<float>& samples) {
 
 } // namespace
 
+/// Loads a Whisper model into a CPU-backed recognition context.
 WhisperEngine::WhisperEngine(const std::string& model_path) {
     whisper_context_params cparams = whisper_context_default_params();
 
@@ -272,6 +280,7 @@ WhisperEngine::WhisperEngine(const std::string& model_path) {
     }
 }
 
+/// Frees the native Whisper recognition context.
 WhisperEngine::~WhisperEngine() {
     if (ctx_) {
         whisper_free(ctx_);
@@ -279,10 +288,12 @@ WhisperEngine::~WhisperEngine() {
     }
 }
 
+/// Reports whether the Whisper model context was loaded successfully.
 bool WhisperEngine::is_loaded() const {
     return ctx_ != nullptr;
 }
 
+/// Transcribes normalized WAV audio and records segment and token timestamps.
 WhisperResult WhisperEngine::transcribe_wav(const std::string& wav_path, int n_threads) const {
     if (!ctx_) {
         throw std::runtime_error("Whisper model is not loaded.");
@@ -380,6 +391,7 @@ WhisperResult WhisperEngine::transcribe_wav(const std::string& wav_path, int n_t
     return result;
 }
 
+/// Decodes a general audio file, transcribes it, and removes temporary audio.
 WhisperResult WhisperEngine::transcribe_audio_file(
     const std::string& audio_path,
     const std::string& ffmpeg_path,

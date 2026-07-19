@@ -27,16 +27,23 @@ struct WhisperResult {
 
 class WhisperEngine {
 public:
+    /// Loads a Whisper model from disk.
     explicit WhisperEngine(const std::string& model_path);
+    /// Releases the loaded Whisper context.
     ~WhisperEngine();
 
+    /// Prevents copying ownership of the native Whisper context.
     WhisperEngine(const WhisperEngine&) = delete;
+    /// Prevents copy assignment of the native Whisper context.
     WhisperEngine& operator=(const WhisperEngine&) = delete;
 
+    /// Reports whether the model is ready for transcription.
     bool is_loaded() const;
 
+    /// Transcribes a normalized mono 16 kHz WAV with token timestamps.
     WhisperResult transcribe_wav(const std::string& wav_path, int n_threads = 0) const;
 
+    /// Decodes and transcribes a supported audio input file.
     WhisperResult transcribe_audio_file(
         const std::string& audio_path,
         const std::string& ffmpeg_path = "ffmpeg",

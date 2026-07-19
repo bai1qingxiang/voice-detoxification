@@ -14,20 +14,20 @@ struct WAVFile {
 
 class WAVWriter {
 public:
-    // 将PCM样本写入WAV文件
+    /// 将 PCM 样本写入标准 WAV 文件。
     static void write_wav(
         const std::string& output_path,
         const std::vector<int16_t>& samples,
         int sample_rate,
         int num_channels = 1);
 
-    // 读取WAV文件
+    /// 将 WAV 文件读取到内存中。
     static WAVFile read_wav(const std::string& input_path);
 
-    // 合并两个WAV文件（串联）
+    /// 串联两个采样率一致的 WAV 缓冲区。
     static WAVFile concatenate_wav(const WAVFile& first, const WAVFile& second);
 
-    // 混合两个WAV文件（叠加）
+    /// 按指定比例混合两个 WAV 缓冲区。
     static WAVFile mix_wav(const WAVFile& first, const WAVFile& second, float ratio = 0.5f);
 };
 

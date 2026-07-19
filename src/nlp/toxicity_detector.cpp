@@ -9,12 +9,14 @@ namespace nlp {
 
 namespace {
 
+/// Converts ASCII text to lowercase for case-insensitive matching.
 std::string to_lower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
         [](unsigned char c) { return std::tolower(c); });
     return s;
 }
 
+/// Removes punctuation while preserving letters, digits, and spaces.
 std::string remove_non_alphanumeric(const std::string& s) {
     std::string result;
     for (char c : s) {
@@ -27,13 +29,16 @@ std::string remove_non_alphanumeric(const std::string& s) {
 
 } // namespace
 
+/// Initializes the built-in English toxicity patterns and lookup index.
 ToxicityDetector::ToxicityDetector() {
     initialize_toxic_wordlist();
     index_words();
 }
 
+/// Releases resources owned by the toxicity detector.
 ToxicityDetector::~ToxicityDetector() = default;
 
+/// Populates phrase and word patterns with severity and category metadata.
 void ToxicityDetector::initialize_toxic_wordlist() {
     toxic_words_ = {
         // Phrase-level patterns are checked before overlapping single words so
@@ -97,6 +102,7 @@ void ToxicityDetector::initialize_toxic_wordlist() {
     };
 }
 
+/// Indexes normalized patterns for efficient token lookup.
 void ToxicityDetector::index_words() {
     for (size_t i = 0; i < toxic_words_.size(); ++i) {
         const std::string normalized = to_lower(toxic_words_[i].word);
@@ -104,12 +110,14 @@ void ToxicityDetector::index_words() {
     }
 }
 
+/// Normalizes input text for toxicity pattern matching.
 std::string ToxicityDetector::normalize_text(const std::string& text) const {
     std::string normalized = to_lower(text);
     normalized = remove_non_alphanumeric(normalized);
     return normalized;
 }
 
+/// Finds non-overlapping toxic words and phrases with original text offsets.
 std::vector<ToxicityMatch> ToxicityDetector::find_toxic_words(
     const std::string& normalized,
     const std::string& original) {
@@ -203,6 +211,7 @@ std::vector<ToxicityMatch> ToxicityDetector::find_toxic_words(
     return non_overlapping;
 }
 
+/// Returns the highest toxicity severity among all detected matches.
 ToxicityLevel ToxicityDetector::compute_overall_level(
     const std::vector<ToxicityMatch>& matches) {
 
@@ -242,6 +251,7 @@ ToxicityLevel ToxicityDetector::compute_overall_level(
     return max_level;
 }
 
+/// Analyzes text and returns severity, confidence, matches, and display censoring.
 ToxicityResult ToxicityDetector::analyze(const std::string& text) {
     ToxicityResult result;
     result.original_text = text;

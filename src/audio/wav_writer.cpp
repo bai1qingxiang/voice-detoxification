@@ -27,6 +27,7 @@ struct WAVHeader {
 
 } // namespace
 
+/// Serializes 16-bit PCM samples into a standard WAV file.
 void WAVWriter::write_wav(
     const std::string& output_path,
     const std::vector<int16_t>& samples,
@@ -68,6 +69,7 @@ void WAVWriter::write_wav(
     file.close();
 }
 
+/// Reads a standard 16-bit PCM WAV file into memory.
 WAVFile WAVWriter::read_wav(const std::string& input_path) {
     std::ifstream file(input_path, std::ios::binary);
     if (!file) {
@@ -100,6 +102,7 @@ WAVFile WAVWriter::read_wav(const std::string& input_path) {
     return wav_file;
 }
 
+/// Concatenates two WAV buffers that share a sample rate.
 WAVFile WAVWriter::concatenate_wav(const WAVFile& first, const WAVFile& second) {
     if (first.sample_rate != second.sample_rate) {
         throw std::runtime_error("Sample rates don't match");
@@ -112,6 +115,7 @@ WAVFile WAVWriter::concatenate_wav(const WAVFile& first, const WAVFile& second) 
     return result;
 }
 
+/// Mixes overlapping samples from two WAV buffers at the requested ratio.
 WAVFile WAVWriter::mix_wav(const WAVFile& first, const WAVFile& second, float ratio) {
     size_t min_size = std::min(first.samples.size(), second.samples.size());
 

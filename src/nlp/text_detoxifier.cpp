@@ -8,6 +8,7 @@ namespace nlp {
 
 namespace {
 
+/// Converts a toxicity enum value into a human-readable report label.
 std::string toxicity_to_string(ToxicityLevel level) {
     switch (level) {
         case ToxicityLevel::CLEAN: return "CLEAN";
@@ -20,10 +21,13 @@ std::string toxicity_to_string(ToxicityLevel level) {
 
 } // namespace
 
+/// Initializes the text detoxifier and its toxicity detector.
 TextDetoxifier::TextDetoxifier() = default;
 
+/// Releases resources owned by the text detoxifier.
 TextDetoxifier::~TextDetoxifier() = default;
 
+/// Replaces detected toxic character spans with equal-length asterisks.
 std::string TextDetoxifier::apply_censoring(
     const std::string& text,
     const ToxicityResult& analysis) {
@@ -47,6 +51,7 @@ std::string TextDetoxifier::apply_censoring(
     return result;
 }
 
+/// Detects toxic spans and prepares text markers plus audio-redaction metadata.
 TextDetoxifier::DetoxifiedText TextDetoxifier::detoxify(const std::string& text) {
     DetoxifiedText result;
     result.original = text;
@@ -78,6 +83,7 @@ TextDetoxifier::DetoxifiedText TextDetoxifier::detoxify(const std::string& text)
     return result;
 }
 
+/// Builds a detailed text report for detected ranges and severity.
 std::string TextDetoxifier::build_report(
     const ToxicityResult& original,
     int censored) {

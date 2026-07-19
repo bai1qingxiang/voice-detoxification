@@ -62,6 +62,7 @@ struct ProcessFinished {
     std::wstring message;
 };
 
+/// Quotes and escapes a Windows command-line argument.
 std::wstring quote_argument(const std::wstring& value) {
     std::wstring result = L"\"";
     size_t backslashes = 0;
@@ -83,12 +84,14 @@ std::wstring quote_argument(const std::wstring& value) {
     return result;
 }
 
+/// Returns the absolute path of the running desktop executable.
 fs::path executable_path() {
     std::vector<wchar_t> buffer(32768);
     const DWORD length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
     return fs::path(std::wstring(buffer.data(), length));
 }
 
+/// Locates the project root by searching upward for the Whisper model.
 fs::path find_project_root() {
     fs::path current = executable_path().parent_path();
     for (int depth = 0; depth < 5; ++depth) {
@@ -99,6 +102,7 @@ fs::path find_project_root() {
     return fs::current_path();
 }
 
+/// Produces a filesystem-safe timestamp for generated recording names.
 std::wstring timestamp() {
     SYSTEMTIME time{};
     GetLocalTime(&time);
@@ -109,12 +113,14 @@ std::wstring timestamp() {
     return value;
 }
 
+/// Formats elapsed seconds as a two-digit minute and second string.
 std::wstring format_duration(int seconds) {
     wchar_t text[16]{};
     swprintf(text, 16, L"%02d:%02d", seconds / 60, seconds % 60);
     return text;
 }
 
+/// Writes captured mono PCM samples as a standard 16 kHz WAV file.
 bool write_wav_file(const fs::path& path, const std::vector<int16_t>& samples) {
     std::ofstream stream(path, std::ios::binary);
     if (!stream) return false;
@@ -145,6 +151,7 @@ bool write_wav_file(const fs::path& path, const std::vector<int16_t>& samples) {
     return stream.good();
 }
 
+/// Performs a case-insensitive substring check for device-name ranking.
 bool contains_case_insensitive(std::wstring value, std::wstring needle) {
     std::transform(value.begin(), value.end(), value.begin(), ::towlower);
     std::transform(needle.begin(), needle.end(), needle.begin(), ::towlower);
@@ -156,6 +163,7 @@ struct WavPlaybackData {
     std::vector<char> samples;
 };
 
+/// Loads WAV format metadata and PCM bytes for WinMM playback.
 bool load_wav_for_playback(const fs::path& path, WavPlaybackData& wav) {
     std::ifstream stream(path, std::ios::binary);
     if (!stream) return false;
@@ -198,11 +206,13 @@ bool load_wav_for_playback(const fs::path& path, WavPlaybackData& wav) {
     return has_format && has_data && wav.format.wFormatTag == WAVE_FORMAT_PCM && !wav.samples.empty();
 }
 
+/// Posts an asynchronous playback error message to the main window.
 void post_playback_error(HWND window, const wchar_t* message) {
     auto* text = new std::wstring(message);
     if (!PostMessageW(window, WM_APP_PLAYBACK_ERROR, 0, reinterpret_cast<LPARAM>(text))) delete text;
 }
 
+/// Plays a WAV on the selected output device without blocking the UI thread.
 void play_wav_async(HWND window, const fs::path& path, UINT device_id, uint64_t generation) {
     std::thread([window, path, device_id, generation]() {
         WavPlaybackData wav;
@@ -238,6 +248,7 @@ void play_wav_async(HWND window, const fs::path& path, UINT device_id, uint64_t 
 
 class AudioRecorder {
 public:
+    /// Opens the selected microphone and begins queued WinMM recording.
     bool start(HWND notify_window, UINT device_id, std::wstring& error) {
         if (recording_) return false;
         notify_window_ = notify_window;
@@ -282,6 +293,7 @@ public:
         return true;
     }
 
+    /// Stops recording, validates the captured signal, and saves it as WAV.
     bool stop_and_save(const fs::path& path, std::wstring& error) {
         if (!handle_) return false;
         recording_ = false;
@@ -324,15 +336,18 @@ public:
         return true;
     }
 
+    /// Reports whether the microphone capture session is active.
     bool is_recording() const { return recording_; }
 
 private:
+    /// Forwards completed WinMM input buffers to the owning recorder instance.
     static void CALLBACK wave_callback(HWAVEIN, UINT message, DWORD_PTR instance, DWORD_PTR param1, DWORD_PTR) {
         if (message != WIM_DATA || instance == 0) return;
         auto* recorder = reinterpret_cast<AudioRecorder*>(instance);
         recorder->on_audio(reinterpret_cast<WAVEHDR*>(param1));
     }
 
+    /// Copies a completed input buffer and requeues it while recording continues.
     void on_audio(WAVEHDR* header) {
         if (header->dwBytesRecorded > 0) {
             const auto* input = reinterpret_cast<const int16_t*>(header->lpData);
@@ -358,6 +373,7 @@ private:
         }
     }
 
+    /// Releases WinMM headers, buffers, and the active microphone handle.
     void stop_internal() {
         recording_ = false;
         if (!handle_) return;
@@ -415,10 +431,12 @@ struct AppContext {
 
 AppContext app;
 
+/// Applies a shared font to a child control.
 void set_font(HWND control, HFONT font) {
     SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
 }
 
+/// Enumerates microphones and selects a preferred physical input device.
 void populate_input_devices() {
     app.input_device_ids.clear();
     SendMessageW(app.input_device_combo, CB_RESETCONTENT, 0, 0);
@@ -449,6 +467,7 @@ void populate_input_devices() {
     SendMessageW(app.input_device_combo, CB_SETDROPPEDWIDTH, 420, 0);
 }
 
+/// Enumerates speakers and selects a preferred physical playback device.
 void populate_output_devices() {
     app.output_device_ids.clear();
     SendMessageW(app.output_device_combo, CB_RESETCONTENT, 0, 0);
@@ -479,12 +498,14 @@ void populate_output_devices() {
     SendMessageW(app.output_device_combo, CB_SETDROPPEDWIDTH, 420, 0);
 }
 
+/// Resolves the currently selected combo-box row to its WinMM device ID.
 UINT selected_device(HWND combo, const std::vector<UINT>& device_ids) {
     const LRESULT selection = SendMessageW(combo, CB_GETCURSEL, 0, 0);
     if (selection == CB_ERR || static_cast<size_t>(selection) >= device_ids.size()) return WAVE_MAPPER;
     return device_ids[static_cast<size_t>(selection)];
 }
 
+/// Shows or hides output playback, folder, save, and path controls.
 void show_result_buttons(bool show) {
     const int command = show ? SW_SHOW : SW_HIDE;
     ShowWindow(app.play_button, command);
@@ -493,6 +514,7 @@ void show_result_buttons(bool show) {
     ShowWindow(app.output_path, command);
 }
 
+/// Switches controls between idle and active-recording states.
 void set_recording_ui(bool recording) {
     SetWindowTextW(app.record_button, recording ? L"停止" : L"录音");
     SetWindowTextW(app.record_hint, recording ? L"再次点击结束录音并开始处理" : L"点击按钮开始讲话");
@@ -502,6 +524,7 @@ void set_recording_ui(bool recording) {
     InvalidateRect(app.record_button, nullptr, TRUE);
 }
 
+/// Locks recording settings and initializes processing progress feedback.
 void set_processing_ui() {
     app.processing = true;
     EnableWindow(app.record_button, FALSE);
@@ -515,11 +538,13 @@ void set_processing_ui() {
     show_result_buttons(false);
 }
 
+/// Delivers a thread-safe pipeline status update to the main window.
 void post_status(HWND window, const wchar_t* text, int progress) {
     auto* update = new ProcessStatus{text, progress};
     if (!PostMessageW(window, WM_APP_PROCESS_STATUS, 0, reinterpret_cast<LPARAM>(update))) delete update;
 }
 
+/// Runs the CLI detoxification pipeline in a hidden background process.
 void run_pipeline_async(HWND window, fs::path input_path, fs::path output_path) {
     std::thread([window, input_path = std::move(input_path), output_path = std::move(output_path)]() {
         auto* finished = new ProcessFinished{};
@@ -613,6 +638,7 @@ void run_pipeline_async(HWND window, fs::path input_path, fs::path output_path) 
     }).detach();
 }
 
+/// Starts microphone capture using the selected recording device.
 void begin_recording(HWND window) {
     ++playback_generation;
     std::wstring error;
@@ -630,6 +656,7 @@ void begin_recording(HWND window) {
     show_result_buttons(false);
 }
 
+/// Finalizes microphone capture and launches silence redaction.
 void finish_recording(HWND window) {
     KillTimer(window, RECORD_TIMER_ID);
     wchar_t temp_directory[MAX_PATH]{};
@@ -652,6 +679,7 @@ void finish_recording(HWND window) {
     run_pipeline_async(window, app.input_path, app.output_file);
 }
 
+/// Prompts for a destination and copies the processed WAV there.
 void save_output_copy(HWND window) {
     if (app.output_file.empty() || !fs::exists(app.output_file)) return;
     wchar_t file_name[MAX_PATH]{};
@@ -671,6 +699,7 @@ void save_output_copy(HWND window) {
     }
 }
 
+/// Repositions all controls to fit the current client area.
 void layout_controls(int width, int height) {
     const int margin = 28;
     const int gap = 14;
@@ -723,6 +752,7 @@ void layout_controls(int width, int height) {
     MoveWindow(app.save_button, right_x + 40 + button_width * 2, content_top + content_height - 52, button_width, 34, TRUE);
 }
 
+/// Paints the decorative waveform control and handles its window messages.
 LRESULT CALLBACK waveform_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     if (message == WM_PAINT) {
         PAINTSTRUCT paint{};
@@ -751,6 +781,7 @@ LRESULT CALLBACK waveform_proc(HWND window, UINT message, WPARAM wparam, LPARAM 
     return DefWindowProcW(window, message, wparam, lparam);
 }
 
+/// Handles main-window creation, commands, painting, progress, and shutdown.
 LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
     case WM_CREATE: {
@@ -976,6 +1007,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
 
 } // namespace
 
+/// Registers window classes and starts the native Windows message loop.
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show_command) {
     INITCOMMONCONTROLSEX controls{sizeof(INITCOMMONCONTROLSEX), ICC_PROGRESS_CLASS | ICC_STANDARD_CLASSES};
     InitCommonControlsEx(&controls);

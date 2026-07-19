@@ -6,6 +6,7 @@
 
 namespace {
 
+/// Terminates the test executable with a diagnostic when an assertion fails.
 void expect(bool condition, const std::string& message) {
     if (!condition) {
         std::cerr << "FAILED: " << message << '\n';
@@ -13,6 +14,7 @@ void expect(bool condition, const std::string& message) {
     }
 }
 
+/// Verifies toxic text is marked for muting while non-toxic text is preserved.
 void expect_silence_redaction_marker(
     nlp::TextDetoxifier& detoxifier,
     const std::string& input,
@@ -35,6 +37,7 @@ void expect_silence_redaction_marker(
 
 } // namespace
 
+/// Runs English toxicity and silence-redaction regression cases.
 int main() {
     nlp::TextDetoxifier detoxifier;
 
