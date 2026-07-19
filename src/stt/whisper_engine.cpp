@@ -4,6 +4,7 @@
 #include "whisper.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -230,6 +231,32 @@ int resolve_thread_count(int requested) {
     return static_cast<int>(std::max(1u, hc));
 }
 
+void normalize_speech_level(std::vector<float>& samples) {
+    if (samples.empty()) return;
+
+    long double mean = 0.0;
+    for (float sample : samples) mean += sample;
+    mean /= static_cast<long double>(samples.size());
+
+    long double square_sum = 0.0;
+    float peak = 0.0f;
+    for (float& sample : samples) {
+        sample -= static_cast<float>(mean);
+        square_sum += static_cast<long double>(sample) * sample;
+        peak = std::max(peak, std::abs(sample));
+    }
+
+    const float rms = static_cast<float>(std::sqrt(square_sum / samples.size()));
+    if (rms < 0.0005f || peak < 0.002f) {
+        throw std::runtime_error("No usable speech signal was detected in the recording.");
+    }
+
+    constexpr float target_rms = 0.08f;
+    float gain = std::clamp(target_rms / rms, 0.5f, 8.0f);
+    if (peak * gain > 0.95f) gain = 0.95f / peak;
+    for (float& sample : samples) sample = std::clamp(sample * gain, -0.98f, 0.98f);
+}
+
 } // namespace
 
 WhisperEngine::WhisperEngine(const std::string& model_path) {
@@ -262,24 +289,40 @@ WhisperResult WhisperEngine::transcribe_wav(const std::string& wav_path, int n_t
     }
 
     std::cout << "[DEBUG] loading wav: " << wav_path << std::endl;
-    const WavData wav = load_wav_pcm_s16le_mono_16k(wav_path);
+    WavData wav = load_wav_pcm_s16le_mono_16k(wav_path);
+    normalize_speech_level(wav.pcmf32);
 
     std::cout << "[DEBUG] wav loaded, sample_rate=" << wav.sample_rate
               << ", channels=" << wav.channels
               << ", bits=" << wav.bits_per_sample
               << ", samples=" << wav.pcmf32.size() << std::endl;
 
-    whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+    whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_BEAM_SEARCH);
     params.n_threads = resolve_thread_count(n_threads);
     params.print_progress = false;
     params.print_realtime = false;
     params.print_timestamps = false;
     params.translate = false;
-    params.no_context = true;
+    params.no_context = false;
     params.single_segment = false;
+    // Keep timestamp tokens internally so long recordings can advance through
+    // every audio window. They are not printed or included in the text.
     params.no_timestamps = false;
+    params.token_timestamps = true;
+    params.split_on_word = true;
     params.language = "en";
     params.detect_language = false;
+    params.initial_prompt = "This is an English conversation that may contain profanity, insults, or threats. Transcribe every spoken word exactly, including offensive language, with punctuation.";
+    params.carry_initial_prompt = false;
+    params.suppress_blank = true;
+    params.suppress_nst = true;
+    params.temperature = 0.0f;
+    params.temperature_inc = 0.2f;
+    params.entropy_thold = 2.4f;
+    params.logprob_thold = -1.0f;
+    params.no_speech_thold = 0.60f;
+    params.beam_search.beam_size = 5;
+    params.beam_search.patience = 1.0f;
 
     std::cout << "[DEBUG] calling whisper_full..." << std::endl;
 
@@ -296,6 +339,7 @@ WhisperResult WhisperEngine::transcribe_wav(const std::string& wav_path, int n_t
     }
 
     WhisperResult result;
+    result.audio_duration_ms = static_cast<int64_t>(wav.pcmf32.size()) * 1000 / wav.sample_rate;
 
     const int n_segments = whisper_full_n_segments(ctx_);
     std::cout << "[DEBUG] n_segments = " << n_segments << std::endl;
@@ -305,6 +349,29 @@ WhisperResult WhisperEngine::transcribe_wav(const std::string& wav_path, int n_t
         seg.t0_ms = static_cast<int64_t>(whisper_full_get_segment_t0(ctx_, i)) * 10;
         seg.t1_ms = static_cast<int64_t>(whisper_full_get_segment_t1(ctx_, i)) * 10;
         seg.text = whisper_full_get_segment_text(ctx_, i);
+
+        const size_t segment_text_start = result.full_text.size();
+        size_t token_search_start = 0;
+        const int n_tokens = whisper_full_n_tokens(ctx_, i);
+        for (int token_index = 0; token_index < n_tokens; ++token_index) {
+            const whisper_token_data data = whisper_full_get_token_data(ctx_, i, token_index);
+            if (data.id >= whisper_token_eot(ctx_)) continue;
+
+            const std::string token_text = whisper_full_get_token_text(ctx_, i, token_index);
+            if (token_text.empty()) continue;
+
+            const size_t local_start = seg.text.find(token_text, token_search_start);
+            if (local_start == std::string::npos) continue;
+
+            WhisperToken token;
+            token.t0_ms = data.t0 * 10;
+            token.t1_ms = data.t1 * 10;
+            token.text_start = segment_text_start + local_start;
+            token.text_end = token.text_start + token_text.size();
+            token.text = token_text;
+            result.tokens.push_back(std::move(token));
+            token_search_start = local_start + token_text.size();
+        }
 
         result.full_text += seg.text;
         result.segments.push_back(std::move(seg));

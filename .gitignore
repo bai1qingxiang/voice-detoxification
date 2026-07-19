@@ -4,6 +4,7 @@
 /build_simple*/
 /build_verify*/
 /out/
+/output/
 /bin/
 /lib/
 CMakeCache.txt

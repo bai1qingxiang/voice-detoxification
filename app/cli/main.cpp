@@ -6,16 +6,14 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <limits>
 #include <sstream>
-#include <unordered_set>
+#include <vector>
 
 #include "common/logger.h"
 #include "stt/whisper_engine.h"
 #include "nlp/text_detoxifier.h"
-#include "tts/piper_engine.h"
-#include "audio/voice_analyzer.h"
 #include "audio/audio_decoder.h"
-#include "audio/wav_writer.h"
 
 namespace fs = std::filesystem;
 
@@ -126,84 +124,112 @@ void convert_original_audio_to_wav(
     }
 }
 
-std::string strip_whisper_annotations(const std::string& text) {
-    std::string result;
-    for (size_t i = 0; i < text.size(); ++i) {
-        if (text[i] == '*') {
-            const size_t end = text.find('*', i + 1);
-            if (end != std::string::npos) {
-                const std::string segment = text.substr(i + 1, end - i - 1);
-                const bool looks_like_annotation =
-                    !segment.empty() &&
-                    segment.size() <= 40 &&
-                    std::any_of(segment.begin(), segment.end(), [](unsigned char c) {
-                        return std::isalpha(c) != 0;
-                    });
+struct MuteRange {
+    double start_seconds = 0.0;
+    double end_seconds = 0.0;
+};
 
-                if (looks_like_annotation) {
-                    i = end;
-                    continue;
-                }
+std::vector<MuteRange> build_mute_ranges(
+    const WhisperResult& transcription,
+    const std::vector<nlp::ToxicityMatch>& matches) {
+
+    std::vector<MuteRange> ranges;
+    for (const auto& match : matches) {
+        double start = std::numeric_limits<double>::max();
+        double end = -1.0;
+        double point_timestamp = -1.0;
+
+        for (const auto& token : transcription.tokens) {
+            const bool overlaps = token.text_start < match.end_pos && token.text_end > match.start_pos;
+            if (overlaps && token.t0_ms >= 0 && token.t1_ms > token.t0_ms) {
+                start = std::min(start, token.t0_ms / 1000.0);
+                end = std::max(end, token.t1_ms / 1000.0);
+            } else if (overlaps && token.t0_ms >= 0) {
+                if (point_timestamp < 0.0) point_timestamp = token.t0_ms / 1000.0;
             }
         }
 
-        result.push_back(text[i]);
-    }
+        // Whisper sometimes collapses the last tokens to one timestamp at the
+        // end of its 30-second window. Use that point through the actual audio
+        // tail instead of estimating it from the whole segment.
+        if (end <= start && point_timestamp >= 0.0) {
+            start = point_timestamp;
+            end = transcription.audio_duration_ms / 1000.0;
+        }
 
-    return result;
-}
+        // Token timestamps can occasionally be unavailable. In that case,
+        // estimate the word span inside its timestamped Whisper segment.
+        if (end <= start) {
+            size_t segment_text_start = 0;
+            for (const auto& segment : transcription.segments) {
+                const size_t segment_text_end = segment_text_start + segment.text.size();
+                const bool overlaps = segment_text_start < match.end_pos &&
+                                      segment_text_end > match.start_pos;
+                if (overlaps && !segment.text.empty() && segment.t1_ms > segment.t0_ms) {
+                    const size_t local_start = std::max(match.start_pos, segment_text_start) - segment_text_start;
+                    const size_t local_end = std::min(match.end_pos, segment_text_end) - segment_text_start;
+                    const double duration = (segment.t1_ms - segment.t0_ms) / 1000.0;
+                    start = segment.t0_ms / 1000.0 + duration * local_start / segment.text.size();
+                    end = segment.t0_ms / 1000.0 + duration * local_end / segment.text.size();
+                    break;
+                }
+                segment_text_start = segment_text_end;
+            }
+        }
 
-std::vector<std::string> extract_lower_words(const std::string& text) {
-    std::vector<std::string> words;
-    std::string current;
-
-    for (unsigned char c : text) {
-        if (std::isalpha(c)) {
-            current.push_back(static_cast<char>(std::tolower(c)));
-        } else if (!current.empty()) {
-            words.push_back(current);
-            current.clear();
+        if (end > start) {
+            constexpr double padding_seconds = 0.08;
+            ranges.push_back({std::max(0.0, start - padding_seconds), end + padding_seconds});
         }
     }
 
-    if (!current.empty()) {
-        words.push_back(current);
-    }
+    std::sort(ranges.begin(), ranges.end(), [](const MuteRange& a, const MuteRange& b) {
+        return a.start_seconds < b.start_seconds;
+    });
 
-    return words;
-}
-
-bool should_skip_tts_for_detoxified_text(
-    const nlp::TextDetoxifier::DetoxifiedText& detoxified) {
-
-    const int toxic_issue_count = detoxified.replacements_made + detoxified.censored_words;
-    if (toxic_issue_count == 0) {
-        return false;
-    }
-
-    const auto original_words = extract_lower_words(strip_whisper_annotations(detoxified.original));
-    if (original_words.empty()) {
-        return true;
-    }
-
-    const float toxic_ratio =
-        static_cast<float>(toxic_issue_count) / static_cast<float>(original_words.size());
-
-    const auto cleaned_words = extract_lower_words(strip_whisper_annotations(detoxified.detoxified));
-    static const std::unordered_set<std::string> filler_words = {
-        "ah", "eh", "er", "hmm", "hm", "huh", "oh", "uh", "um",
-        "you", "your", "yours", "yeah", "yep", "yes", "no",
-        "sigh", "clock", "ticking"
-    };
-
-    int meaningful_words = 0;
-    for (const auto& word : cleaned_words) {
-        if (filler_words.find(word) == filler_words.end()) {
-            meaningful_words++;
+    std::vector<MuteRange> merged;
+    for (const auto& range : ranges) {
+        if (!merged.empty() && range.start_seconds <= merged.back().end_seconds + 0.03) {
+            merged.back().end_seconds = std::max(merged.back().end_seconds, range.end_seconds);
+        } else {
+            merged.push_back(range);
         }
     }
+    return merged;
+}
 
-    return meaningful_words == 0 || toxic_ratio >= 0.35f;
+void mute_audio_ranges_to_wav(
+    const std::string& input_path,
+    const std::string& output_path,
+    const std::string& ffmpeg_path,
+    const std::vector<MuteRange>& ranges) {
+
+    if (ranges.empty()) throw std::runtime_error("No timestamp ranges were available for audio redaction.");
+
+    const fs::path output_fs_path(output_path);
+    if (output_fs_path.has_parent_path()) fs::create_directories(output_fs_path.parent_path());
+
+    std::ostringstream filter;
+    filter << std::fixed << std::setprecision(3);
+    for (size_t i = 0; i < ranges.size(); ++i) {
+        if (i > 0) filter << ',';
+        filter << "volume=0:enable='between(t," << ranges[i].start_seconds
+               << ',' << ranges[i].end_seconds << ")'";
+    }
+
+    std::ostringstream cmd;
+    cmd << quote_executable_if_needed(normalize_path_for_cmd(ffmpeg_path))
+        << " -y -hide_banner -loglevel error"
+        << " -i " << quote_file_arg(normalize_path_for_cmd(fs::absolute(input_path).string()))
+        << " -vn -af \"" << filter.str() << "\""
+        << " -c:a pcm_s16le "
+        << quote_file_arg(normalize_path_for_cmd(fs::absolute(output_path).string()));
+
+    std::cout << "[DEBUG] ffmpeg silence-redaction cmd: " << cmd.str() << std::endl;
+    const int rc = std::system(cmd.str().c_str());
+    if (rc != 0 || !fs::exists(output_path)) {
+        throw std::runtime_error("Failed to write silence-redacted WAV with ffmpeg.");
+    }
 }
 
 } // namespace
@@ -212,18 +238,14 @@ void print_usage(const char* program_name) {
     std::cout << "Usage: " << program_name << " [options] [whisper_model] [audio_file]\n\n";
     std::cout << "Options:\n";
     std::cout << "  --help              Show this help message\n";
-    std::cout << "  --censor-only       Censor toxic words with * instead of replacing\n";
     std::cout << "  --output FILE       Save output audio to FILE (default: output.wav)\n";
-    std::cout << "  --tts-model FILE    Piper ONNX voice model (default: models/piper-en_US-libritts-high.onnx)\n";
-    std::cout << "  --skip-tts          Skip text-to-speech (only detoxify text)\n";
-    std::cout << "  --skip-voice-restore Skip voice characteristic restoration\n";
+    std::cout << "  --skip-audio        Only transcribe and report detected words\n";
     std::cout << "  --ffmpeg PATH       Path to ffmpeg executable (default: ffmpeg)\n\n";
     std::cout << "Arguments:\n";
     std::cout << "  whisper_model       Path to Whisper GGML model (default: models/ggml-medium.bin)\n";
     std::cout << "  audio_file          Path to audio file or directory (auto-detected if empty)\n\n";
     std::cout << "Examples:\n";
     std::cout << "  " << program_name << " models/ggml-small.bin audio.mp3\n";
-    std::cout << "  " << program_name << " --censor-only models/ggml-small.bin audio.mp3\n";
     std::cout << "  " << program_name << " --output clean.wav models/ggml-small.bin audio.mp3\n";
 }
 
@@ -236,10 +258,7 @@ int main(int argc, char** argv) {
         std::string audio_path = "";
         std::string ffmpeg_path = "ffmpeg";
         std::string output_path = "output.wav";
-        std::string tts_model = "models/piper-en_US-libritts-high.onnx";
-        bool censor_only = false;
-        bool skip_tts = false;
-        bool skip_voice_restore = false;
+        bool skip_audio = false;
 
         // Parse command line
         for (int i = 1; i < argc; ++i) {
@@ -248,16 +267,10 @@ int main(int argc, char** argv) {
             if (arg == "--help") {
                 print_usage(argv[0]);
                 return 0;
-            } else if (arg == "--censor-only") {
-                censor_only = true;
-            } else if (arg == "--skip-tts") {
-                skip_tts = true;
-            } else if (arg == "--skip-voice-restore") {
-                skip_voice_restore = true;
+            } else if (arg == "--skip-audio") {
+                skip_audio = true;
             } else if (arg == "--output" && i + 1 < argc) {
                 output_path = argv[++i];
-            } else if (arg == "--tts-model" && i + 1 < argc) {
-                tts_model = argv[++i];
             } else if (arg == "--ffmpeg" && i + 1 < argc) {
                 ffmpeg_path = argv[++i];
             } else if (arg[0] != '-') {
@@ -295,9 +308,7 @@ int main(int argc, char** argv) {
 
         // Initialize detoxifier
         log_info("Analyzing content for toxic language...");
-        nlp::DetoxificationOptions detox_options;
-        detox_options.censor_only = censor_only;
-        nlp::TextDetoxifier detoxifier(detox_options);
+        nlp::TextDetoxifier detoxifier;
 
         // Process transcription for toxicity
         auto detoxified = detoxifier.detoxify(transcription.full_text);
@@ -310,9 +321,9 @@ int main(int argc, char** argv) {
             std::cout << "✓ No toxic content detected - text is clean.\n\n";
         }
 
-        if (skip_tts) {
-            log_info("TTS skipped (--skip-tts)");
-            std::cout << "\nProcessing complete. TTS was skipped, so no clean audio file was generated.\n";
+        if (skip_audio) {
+            log_info("Audio output skipped (--skip-audio)");
+            std::cout << "\nProcessing complete. Audio output was skipped.\n";
             return 0;
         }
 
@@ -336,88 +347,24 @@ int main(int argc, char** argv) {
             return 0;
         }
 
-        if (should_skip_tts_for_detoxified_text(detoxified)) {
-            std::cout << "\nProcessing complete. The remaining detoxified text is not suitable for speech synthesis,\n";
-            std::cout << "so no clean audio file was generated.\n";
-            return 0;
-        }
-
         std::cout << std::string(70, '=') << "\n";
-        std::cout << "STAGE 3: TEXT-TO-SPEECH SYNTHESIS\n";
+        std::cout << "STAGE 3: SILENCE REDACTION\n";
         std::cout << std::string(70, '=') << "\n\n";
 
-        log_info("Initializing Piper TTS...");
-        bool tts_completed = false;
-        bool voice_restore_completed = false;
-        try {
-            tts::PiperEngine tts_engine(tts_model);
-
-            if (!tts_engine.is_loaded()) {
-                throw std::runtime_error("Failed to load TTS model");
-            }
-
-            log_info("Synthesizing clean speech...");
-            auto tts_result = tts_engine.synthesize(detoxified.detoxified);
-
-            std::cout << "✓ Speech synthesis complete\n";
-            std::cout << "  Duration: " << std::fixed << std::setprecision(2)
-                     << tts_result.duration_seconds << " seconds\n";
-            std::cout << "  Sample rate: " << tts_result.sample_rate << " Hz\n";
-            std::cout << "  Samples: " << tts_result.audio_samples.size() << "\n\n";
-
-            if (!skip_voice_restore) {
-                std::cout << std::string(70, '=') << "\n";
-                std::cout << "STAGE 4: VOICE CHARACTERISTIC RESTORATION\n";
-                std::cout << std::string(70, '=') << "\n\n";
-
-                log_info("Extracting original voice characteristics...");
-
-                audio::VoiceCharacteristics original_voice;
-                const std::string source_audio_path = resolve_audio_path_for_analysis(audio_path);
-                if (source_audio_path.empty()) {
-                    throw std::runtime_error("Could not find source audio for voice restoration.");
-                }
-
-                const auto decoded_source = audio::decode_to_mono16k_wav(source_audio_path, ffmpeg_path);
-                try {
-                    original_voice = audio::VoiceAnalyzer::analyze_file(decoded_source.normalized_wav_path);
-                    audio::remove_file_if_exists(decoded_source.normalized_wav_path);
-                } catch (...) {
-                    audio::remove_file_if_exists(decoded_source.normalized_wav_path);
-                    throw;
-                }
-
-                std::cout << "Original voice characteristics:\n";
-                if (original_voice.mean_pitch > 0.0f) {
-                    std::cout << "  Mean pitch: " << original_voice.mean_pitch << " Hz\n";
-                } else {
-                    std::cout << "  Mean pitch: unavailable\n";
-                }
-                std::cout << "  Energy: " << original_voice.energy_mean << "\n";
-                std::cout << "  Pitch variance: " << original_voice.pitch_variance << "\n\n";
-
-                log_info("Applying voice characteristics...");
-                auto voice_adjusted = audio::VoiceConverter::transfer_voice_characteristics(
-                    tts_result.audio_samples,
-                    original_voice,
-                    tts_result.sample_rate);
-
-                std::cout << "✓ Voice characteristic restoration complete\n\n";
-
-                // Write to file
-                audio::WAVWriter::write_wav(output_path, voice_adjusted,
-                                           tts_result.sample_rate, 1);
-                voice_restore_completed = true;
-            } else {
-                // Write to file without voice restoration
-                audio::WAVWriter::write_wav(output_path, tts_result.audio_samples,
-                                           tts_result.sample_rate, 1);
-            }
-            tts_completed = true;
-        } catch (const std::exception& e) {
-            throw std::runtime_error(
-                "Clean audio generation failed. No output audio was written: " + std::string(e.what()));
+        const std::string source_audio_path = resolve_audio_path_for_analysis(audio_path);
+        if (source_audio_path.empty()) {
+            throw std::runtime_error("Could not find source audio for silence redaction.");
         }
+
+        const auto mute_ranges = build_mute_ranges(transcription, detoxified.matches);
+        std::cout << "Muting " << mute_ranges.size() << " audio range(s):\n";
+        for (const auto& range : mute_ranges) {
+            std::cout << "  " << std::fixed << std::setprecision(3)
+                      << range.start_seconds << "s - " << range.end_seconds << "s\n";
+        }
+
+        log_info("Replacing detected toxic speech with silence...");
+        mute_audio_ranges_to_wav(source_audio_path, output_path, ffmpeg_path, mute_ranges);
 
         std::cout << std::string(70, '=') << "\n";
         std::cout << "PROCESSING COMPLETE\n";
@@ -425,12 +372,9 @@ int main(int argc, char** argv) {
 
         std::cout << "Summary:\n";
         std::cout << "  ✓ Transcription: Complete\n";
-        std::cout << "  ✓ Detoxification: " << (detoxified.replacements_made + detoxified.censored_words)
-                 << " issue(s) fixed\n";
-        std::cout << "  ✓ TTS Synthesis: " << (tts_completed ? "Complete" : "Skipped") << "\n";
-        if (!skip_voice_restore && voice_restore_completed) {
-            std::cout << "  ✓ Voice Restoration: Complete\n";
-        }
+        std::cout << "  ✓ Silence redaction: " << detoxified.censored_words
+                 << " issue(s) muted\n";
+        std::cout << "  ✓ Original speech outside muted ranges: Preserved\n";
         std::cout << "  ✓ Output: " << output_path << "\n\n";
 
         return 0;

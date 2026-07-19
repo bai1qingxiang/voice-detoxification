@@ -32,6 +32,8 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # 开关
 # =========================
 option(VOICE_DETOX_BUILD_APP "Build main application" ON)
+option(VOICE_DETOX_BUILD_DESKTOP "Build Windows desktop application" ON)
+option(VOICE_DETOX_BUILD_TESTS "Build project regression tests" ON)
 option(VOICE_DETOX_ENABLE_WHISPER "Enable whisper.cpp" ON)
 
 # ccache can hang with MinGW/Windows in some environments while building ggml.
@@ -72,7 +74,6 @@ set(VOICE_DETOX_SOURCES
     ${CMAKE_SOURCE_DIR}/src/nlp/text_detoxifier.cpp
     ${CMAKE_SOURCE_DIR}/src/nlp/toxicity_detector.cpp
     ${CMAKE_SOURCE_DIR}/src/stt/whisper_engine.cpp
-    ${CMAKE_SOURCE_DIR}/src/tts/piper_engine.cpp
 )
 
 if(NOT VOICE_DETOX_SOURCES)
@@ -132,6 +133,31 @@ if(VOICE_DETOX_BUILD_APP)
         PRIVATE
             ${CMAKE_SOURCE_DIR}/src
     )
+endif()
+
+if(WIN32 AND VOICE_DETOX_BUILD_DESKTOP)
+    add_executable(voice_detox_desktop WIN32
+        ${CMAKE_SOURCE_DIR}/app/desktop/main.cpp
+    )
+
+    target_compile_definitions(voice_detox_desktop PRIVATE UNICODE _UNICODE)
+    target_link_libraries(voice_detox_desktop PRIVATE
+        winmm
+        comctl32
+        comdlg32
+        dwmapi
+        shell32
+    )
+endif()
+
+if(VOICE_DETOX_BUILD_TESTS)
+    enable_testing()
+    add_executable(voice_detox_nlp_tests
+        ${CMAKE_SOURCE_DIR}/tests/nlp_detox_tests.cpp
+    )
+    target_link_libraries(voice_detox_nlp_tests PRIVATE voice_detox_core)
+    target_include_directories(voice_detox_nlp_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    add_test(NAME voice_detox_nlp_tests COMMAND voice_detox_nlp_tests)
 endif()
 
 # =========================

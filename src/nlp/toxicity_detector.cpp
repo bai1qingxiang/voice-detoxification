@@ -36,6 +36,26 @@ ToxicityDetector::~ToxicityDetector() = default;
 
 void ToxicityDetector::initialize_toxic_wordlist() {
     toxic_words_ = {
+        // Phrase-level patterns are checked before overlapping single words so
+        // the audio muter can silence the complete expression as one range.
+        {"i will kill you", ToxicityLevel::HIGH, "threat"},
+        {"kill yourself", ToxicityLevel::HIGH, "self_harm"},
+        {"shut the fuck up", ToxicityLevel::HIGH, "harassment"},
+        {"go fuck yourself", ToxicityLevel::HIGH, "harassment"},
+        {"what the fuck", ToxicityLevel::HIGH, "profanity"},
+        {"go to hell", ToxicityLevel::HIGH, "harassment"},
+        {"fuck off", ToxicityLevel::HIGH, "harassment"},
+        {"shut up", ToxicityLevel::MEDIUM, "harassment"},
+        {"fuck you", ToxicityLevel::HIGH, "insult"},
+        {"screw you", ToxicityLevel::HIGH, "insult"},
+        {"you suck", ToxicityLevel::MEDIUM, "insult"},
+        {"i hate you", ToxicityLevel::MEDIUM, "insult"},
+        {"piece of shit", ToxicityLevel::HIGH, "insult"},
+        {"son of a bitch", ToxicityLevel::HIGH, "insult"},
+        {"you are an idiot", ToxicityLevel::HIGH, "insult"},
+        {"you are stupid", ToxicityLevel::HIGH, "insult"},
+        {"stupid idiot", ToxicityLevel::HIGH, "insult"},
+
         // High toxicity - severe slurs and hate speech (based on research on online toxicity)
         {"damn", ToxicityLevel::LOW, "profanity"},
         {"hell", ToxicityLevel::LOW, "profanity"},
@@ -48,6 +68,7 @@ void ToxicityDetector::initialize_toxic_wordlist() {
         {"bullshit", ToxicityLevel::HIGH, "profanity"},
         {"asshole", ToxicityLevel::HIGH, "insult"},
         {"bastard", ToxicityLevel::HIGH, "insult"},
+        {"bitch", ToxicityLevel::HIGH, "insult"},
         {"idiot", ToxicityLevel::HIGH, "insult"},
         {"stupid", ToxicityLevel::HIGH, "insult"},
         {"dumb", ToxicityLevel::MEDIUM, "insult"},
@@ -137,7 +158,49 @@ std::vector<ToxicityMatch> ToxicityDetector::find_toxic_words(
     }
     flush_token();
 
-    return matches;
+    const std::string original_lower = to_lower(original);
+    for (const auto& toxic_word : toxic_words_) {
+        if (toxic_word.word.find(' ') == std::string::npos) continue;
+        const std::string phrase = to_lower(toxic_word.word);
+        size_t position = 0;
+        while ((position = original_lower.find(phrase, position)) != std::string::npos) {
+            const size_t end = position + phrase.size();
+            const bool left_boundary = position == 0 ||
+                !std::isalnum(static_cast<unsigned char>(original_lower[position - 1]));
+            const bool right_boundary = end == original_lower.size() ||
+                !std::isalnum(static_cast<unsigned char>(original_lower[end]));
+            if (left_boundary && right_boundary) {
+                ToxicityMatch match;
+                match.matched_text = phrase;
+                match.start_pos = position;
+                match.end_pos = end;
+                match.level = toxic_word.level;
+                match.category = toxic_word.category;
+                matches.push_back(std::move(match));
+            }
+            position = end;
+        }
+    }
+
+    std::sort(matches.begin(), matches.end(), [](const ToxicityMatch& a, const ToxicityMatch& b) {
+        if (a.start_pos != b.start_pos) return a.start_pos < b.start_pos;
+        const size_t a_length = a.end_pos - a.start_pos;
+        const size_t b_length = b.end_pos - b.start_pos;
+        if (a_length != b_length) return a_length > b_length;
+        return a.level > b.level;
+    });
+
+    std::vector<ToxicityMatch> non_overlapping;
+    for (const auto& candidate : matches) {
+        const bool overlaps = std::any_of(
+            non_overlapping.begin(), non_overlapping.end(),
+            [&](const ToxicityMatch& accepted) {
+                return candidate.start_pos < accepted.end_pos && candidate.end_pos > accepted.start_pos;
+            });
+        if (!overlaps) non_overlapping.push_back(candidate);
+    }
+
+    return non_overlapping;
 }
 
 ToxicityLevel ToxicityDetector::compute_overall_level(
@@ -194,11 +257,13 @@ ToxicityResult ToxicityDetector::analyze(const std::string& text) {
     result.overall_level = compute_overall_level(matches);
     result.matches = matches;
 
-    // Set confidence based on number and severity of matches
+    // Confidence increases with severity and corroborating matches.
     if (matches.empty()) {
-        result.confidence = 1.0f;
+        result.confidence = 0.98f;
     } else {
-        result.confidence = std::max(0.0f, 1.0f - (matches.size() * 0.1f));
+        int severity = 0;
+        for (const auto& match : matches) severity = std::max(severity, static_cast<int>(match.level));
+        result.confidence = std::min(0.99f, 0.55f + severity * 0.1f + matches.size() * 0.04f);
     }
 
     // Generate cleaned text by censoring toxic words

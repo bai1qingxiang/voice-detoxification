@@ -10,9 +10,19 @@ struct WhisperSegment {
     std::string text;
 };
 
+struct WhisperToken {
+    int64_t t0_ms = 0;
+    int64_t t1_ms = 0;
+    size_t text_start = 0;
+    size_t text_end = 0;
+    std::string text;
+};
+
 struct WhisperResult {
     std::string full_text;
+    int64_t audio_duration_ms = 0;
     std::vector<WhisperSegment> segments;
+    std::vector<WhisperToken> tokens;
 };
 
 class WhisperEngine {

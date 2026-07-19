@@ -2,9 +2,8 @@ param(
     [string]$Model = "models\ggml-small.bin",
     [string]$Audio = "",
     [string]$Output = "",
-    [switch]$CensorOnly,
-    [switch]$SkipTts,
-    [switch]$RestoreVoice,
+    [Alias("SkipTts")]
+    [switch]$SkipAudio,
     [switch]$ChooseAudio,
     [switch]$RebuildThirdParty
 )
@@ -111,7 +110,6 @@ function Build-WithExistingLibraries {
         "src/nlp/text_detoxifier.cpp",
         "src/nlp/toxicity_detector.cpp",
         "src/stt/whisper_engine.cpp",
-        "src/tts/piper_engine.cpp",
         "-Lbuild/lib",
         "-lwhisper",
         "-l:ggml.a",
@@ -159,14 +157,8 @@ if (-not (Test-Path $App)) {
 }
 
 $runArgs = @("--output", $Output)
-if ($CensorOnly) {
-    $runArgs += "--censor-only"
-}
-if ($SkipTts) {
-    $runArgs += "--skip-tts"
-    $runArgs += "--skip-voice-restore"
-} elseif (-not $RestoreVoice) {
-    $runArgs += "--skip-voice-restore"
+if ($SkipAudio) {
+    $runArgs += "--skip-audio"
 }
 $runArgs += $Model
 $runArgs += $Audio

@@ -131,9 +131,15 @@ TTSResult PiperEngine::synthesize(const std::string& text) {
 
     TTSResult result;
 
-    // Create a Python script to use Piper
-    const std::string script_path = (fs::temp_directory_path() / "piper_synthesize.py").string();
     const std::string output_wav = create_temp_wav_path();
+    const std::string script_path = output_wav + ".py";
+    const std::string text_path = output_wav + ".txt";
+
+    {
+        std::ofstream text_file(text_path, std::ios::binary);
+        if (!text_file) throw std::runtime_error("Failed to create temporary TTS text file.");
+        text_file.write(text.data(), static_cast<std::streamsize>(text.size()));
+    }
 
     // Create Python script content
     std::ostringstream script;
@@ -148,8 +154,11 @@ try:
         from piper import PiperVoice
 
     model_path = sys.argv[1]
-    text = sys.argv[2]
+    text_path = sys.argv[2]
     output_wav = sys.argv[3]
+
+    with open(text_path, 'r', encoding='utf-8') as text_file:
+        text = text_file.read()
 
     voice = PiperVoice.load(model_path)
 
@@ -180,7 +189,7 @@ except Exception as e:
     std::ostringstream cmd;
     cmd << "python " << quote_arg(script_path) << " "
         << quote_arg(model_path_) << " "
-        << quote_arg(text) << " "
+        << quote_arg(text_path) << " "
         << quote_arg(output_wav) << " 2>&1";
 
     std::cout << "[DEBUG] Running: " << cmd.str() << std::endl;
@@ -188,12 +197,14 @@ except Exception as e:
     const int rc = std::system(cmd.str().c_str());
     if (rc != 0) {
         fs::remove(script_path);
+        fs::remove(text_path);
         throw std::runtime_error("Piper synthesis command failed with code " + std::to_string(rc));
     }
 
     // Check if output WAV exists
     if (!fs::exists(output_wav)) {
         fs::remove(script_path);
+        fs::remove(text_path);
         throw std::runtime_error("Piper synthesis did not create an output WAV file.");
     }
 
@@ -207,8 +218,11 @@ except Exception as e:
         // Clean up
         fs::remove(output_wav);
         fs::remove(script_path);
+        fs::remove(text_path);
     } catch (const std::exception& e) {
         fs::remove(script_path);
+        fs::remove(text_path);
+        fs::remove(output_wav);
         std::cerr << "[ERROR] Failed to read WAV: " << e.what() << std::endl;
         throw;
     }

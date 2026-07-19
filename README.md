@@ -4,17 +4,38 @@ A complete voice processing pipeline that transcribes audio and removes toxic/of
 
 ## Features
 
-- **Speech-to-Text**: Uses Whisper for accurate multi-language transcription
+- **Speech-to-Text**: Uses Whisper for English transcription with word timestamps
 - **Toxicity Detection**: Multi-layered approach to detect toxic language:
   - Pattern-based toxic word detection
   - Context-aware categorization (profanity, hate speech, threats, slurs)
   - Configurable toxicity levels
-- **Text Detoxification**: Multiple modes:
-  - Replace with alternatives (contextual substitutions)
-  - Censor with asterisks
-  - Category-based filtering
+- **Audio Detoxification**: Replaces detected toxic speech ranges with silence
+- **Original Audio Preservation**: Keeps the original speaker and all audio outside muted ranges
 - **Segment Analysis**: Per-segment toxicity analysis
 - **Detailed Reporting**: Comprehensive detoxification reports
+
+## Windows Desktop Application
+
+The native desktop application records directly from the system microphone and
+runs the existing detoxification pipeline in the background. It does not use a
+browser or require the removed `web` directory.
+
+From the project root, double-click `desktop.bat`, or run:
+
+```powershell
+.\desktop.bat
+```
+
+In the application:
+
+1. Confirm **敏感词静音（保留原音）**.
+2. Click **录音** and begin speaking.
+3. Click **停止** when finished.
+4. Wait for speech recognition and silence redaction.
+5. Play, open, or save the generated WAV file from the result panel.
+
+Generated audio is stored under `output\`. The application requires microphone
+permission, FFmpeg on `PATH`, and the models already present under `models\`.
 
 ## Architecture
 
@@ -27,9 +48,11 @@ Audio Input
     ↓
 [Toxicity Detector] → Analyze for toxic content
     ↓
-[Text Detoxifier] → Replace/Censor/Filter
+[Word timestamps] → Map toxic text to exact audio ranges
     ↓
-Clean Text Output + Detailed Report
+[ffmpeg] → Replace only those ranges with silence
+    ↓
+Original Audio + Muted Toxic Ranges + Detailed Report
 ```
 
 ## Building
@@ -44,9 +67,8 @@ powershell -ExecutionPolicy Bypass -File scripts\run_simple.ps1
 
 This builds the app and runs the sample audio at `tests\inputs\sample.m4a`.
 The output audio is written to `simple_output.wav`.
-By default, the simple runner skips the old voice-restoration step because this
-project does not include a real voice-cloning model; the result is a cleaner,
-more natural Piper voice.
+The output keeps the original recording duration and voice. It does not
+rewrite or synthesize the transcript.
 
 Shortcut command:
 
@@ -62,8 +84,7 @@ You do not need to copy every input audio file into a project folder. You can:
 
 If you do not provide an output path, the clean audio is written next to the
 input file with `_clean.wav` added to the name.
-If the detected content is mostly toxic and the detoxified text has no useful
-speech left, TTS is skipped and no new clean audio file is written.
+Detected toxic ranges become silence. Non-toxic speech remains unchanged.
 
 If you want to type `detox ...` without `.\detox.bat`, add this project folder
 to your Windows `PATH`, or create a desktop shortcut that runs `detox.bat`.
@@ -71,17 +92,12 @@ to your Windows `PATH`, or create a desktop shortcut that runs `detox.bat`.
 Useful options:
 
 ```powershell
-# Only transcribe and detoxify text, skip TTS
-powershell -ExecutionPolicy Bypass -File scripts\run_simple.ps1 -SkipTts
-
-# Censor toxic words with asterisks
-powershell -ExecutionPolicy Bypass -File scripts\run_simple.ps1 -CensorOnly -SkipTts
+# Only transcribe and report, skip audio output
+powershell -ExecutionPolicy Bypass -File scripts\run_simple.ps1 -SkipAudio
 
 # Use your own audio
 powershell -ExecutionPolicy Bypass -File scripts\run_simple.ps1 -Audio path\to\audio.mp3
 
-# Compare the optional light voice matching step
-powershell -ExecutionPolicy Bypass -File scripts\run_simple.ps1 -Audio path\to\audio.mp3 -Output clean.wav -RestoreVoice
 ```
 
 ### Requirements
@@ -113,13 +129,14 @@ The executable will be at: `build/bin/voice_detox_app.exe` (Windows) or `build/b
 ### Command Line Arguments
 
 ```
-voice_detox_app [whisper_model] [audio_file] [ffmpeg_path] [--censor-only]
+voice_detox_app [options] [whisper_model] [audio_file]
 
 Arguments:
   whisper_model: Path to Whisper GGML model (default: models/ggml-medium.bin)
   audio_file: Path to audio file or directory (auto-detected if empty)
-  ffmpeg_path: Path to ffmpeg executable (default: ffmpeg)
-  --censor-only: Censor toxic words with * instead of replacing them
+  --output FILE: Output WAV path
+  --skip-audio: Only transcribe and report detected words
+  --ffmpeg PATH: Path to ffmpeg executable (default: ffmpeg)
 ```
 
 ### Examples
@@ -127,9 +144,6 @@ Arguments:
 ```bash
 # Basic transcription with detoxification
 ./voice_detox_app models/ggml-medium.bin podcast.mp3
-
-# Censor mode
-./voice_detox_app models/ggml-medium.bin input.wav . ffmpeg --censor-only
 
 # Auto-detect audio file in tests/inputs
 ./voice_detox_app models/ggml-medium.bin
@@ -177,7 +191,7 @@ The application generates a detailed report including:
 - Detected toxic content with categories and severity
 - Detoxified text
 - Per-segment analysis
-- Replacement and censoring statistics
+- Detection and silence-redaction statistics
 
 Example output:
 ```
@@ -259,12 +273,13 @@ Key metrics:
    - Cumulative toxicity score
 5. **Result Aggregation**: Compute overall toxicity level
 
-### Text Detoxification Strategy
+### Audio Detoxification Strategy
 
-1. **Alternative Suggestions**: Each toxic word has contextually appropriate alternatives
-2. **Replacement Logic**: Replace with best alternative when available
-3. **Censoring Fallback**: Use asterisks when no good alternative exists
-4. **Category Filtering**: Respect user preferences for which categories to remove
+1. Detect toxic English words and phrases in the transcript.
+2. Map their text offsets to Whisper token timestamps.
+3. Add a short boundary pad and merge overlapping ranges.
+4. Use FFmpeg to set only those ranges to zero volume.
+5. Preserve the original duration, voice, timing, and non-toxic speech.
 
 ## Performance
 
@@ -275,11 +290,9 @@ Key metrics:
 ## Future Enhancements
 
 - [ ] Multi-language toxicity detection
-- [ ] Context-aware replacement using language models
 - [ ] Real-time audio stream processing
 - [ ] Custom toxicity word list loading
 - [ ] Integration with moderation APIs
-- [ ] Audio reconstruction from cleaned text
 - [ ] Web API interface
 - [ ] Browser extension
 
@@ -289,7 +302,7 @@ This implementation is based on research in toxic language detection and content
 
 - Whisper: Large-V3 multilingual speech recognition model
 - Toxicity patterns: Based on online content moderation best practices
-- Alternative suggestions: Community standards and accessibility guidelines
+- Silence redaction: timestamp-based local audio filtering
 
 ## License
 
