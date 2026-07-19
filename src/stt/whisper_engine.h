@@ -27,23 +27,23 @@ struct WhisperResult {
 
 class WhisperEngine {
 public:
-    /// Loads a Whisper model from disk.
+    /// 从磁盘加载 Whisper 模型。
     explicit WhisperEngine(const std::string& model_path);
-    /// Releases the loaded Whisper context.
+    /// 释放已加载的 Whisper 上下文。
     ~WhisperEngine();
 
-    /// Prevents copying ownership of the native Whisper context.
+    /// 禁止复制原生 Whisper 上下文的所有权。
     WhisperEngine(const WhisperEngine&) = delete;
-    /// Prevents copy assignment of the native Whisper context.
+    /// 禁止对原生 Whisper 上下文执行复制赋值。
     WhisperEngine& operator=(const WhisperEngine&) = delete;
 
-    /// Reports whether the model is ready for transcription.
+    /// 返回模型是否已准备好执行转写。
     bool is_loaded() const;
 
-    /// Transcribes a normalized mono 16 kHz WAV with token timestamps.
+    /// 转写规范化的单声道 16 kHz WAV，并生成词元时间戳。
     WhisperResult transcribe_wav(const std::string& wav_path, int n_threads = 0) const;
 
-    /// Decodes and transcribes a supported audio input file.
+    /// 解码并转写受支持的音频输入文件。
     WhisperResult transcribe_audio_file(
         const std::string& audio_path,
         const std::string& ffmpeg_path = "ffmpeg",

@@ -18,34 +18,34 @@ struct VoiceCharacteristics {
 class VoiceAnalyzer {
 public:
     // 从音频数据提取音色特征
-    /// Extracts voice characteristics from in-memory PCM samples.
+    /// 从内存中的 PCM 样本提取声音特征。
     static VoiceCharacteristics analyze(
         const std::vector<int16_t>& pcm_samples,
         int sample_rate);
 
     // 分析WAV文件
-    /// Loads and analyzes a 16-bit PCM WAV file.
+    /// 加载并分析 16 位 PCM WAV 文件。
     static VoiceCharacteristics analyze_file(const std::string& wav_path);
 
 private:
     // 计算音频的能量
-    /// Computes frame-level RMS energy values.
+    /// 计算帧级均方根能量值。
     static std::vector<float> compute_energy(
         const std::vector<int16_t>& samples,
         int frame_size = 512);
 
     // 使用简单的方法估计基频
-    /// Estimates the fundamental frequency of a voice signal.
+    /// 估算语音信号的基频。
     static float estimate_fundamental_frequency(
         const std::vector<int16_t>& samples,
         int sample_rate);
 
     // 计算过零率
-    /// Computes normalized zero-crossing rate.
+    /// 计算归一化过零率。
     static float compute_zcr(const std::vector<int16_t>& samples);
 
     // 计算频谱特征
-    /// Approximates the spectral centroid of PCM samples.
+    /// 近似计算 PCM 样本的频谱质心。
     static float compute_spectral_centroid(
         const std::vector<int16_t>& samples,
         int sample_rate);
@@ -54,33 +54,33 @@ private:
 class VoiceConverter {
 public:
     // 将一个音频的音色特征应用到另一个音频
-    /// Matches bounded source loudness characteristics onto target audio.
+    /// 将受限的源响度特征匹配到目标音频。
     static std::vector<int16_t> transfer_voice_characteristics(
         const std::vector<int16_t>& target_audio,
         const VoiceCharacteristics& source_characteristics,
         int sample_rate);
 
     // 调整音频的基频
-    /// Adjusts PCM pitch by a semitone offset.
+    /// 按半音偏移调整 PCM 音高。
     static std::vector<int16_t> adjust_pitch(
         const std::vector<int16_t>& audio,
         float pitch_shift_semitones,
         int sample_rate);
 
     // 调整音频的速度
-    /// Adjusts PCM playback speed by a multiplicative factor.
+    /// 按倍数调整 PCM 播放速度。
     static std::vector<int16_t> adjust_speed(
         const std::vector<int16_t>& audio,
         float speed_factor);
 
     // 调整音频的能量
-    /// Scales PCM sample energy with clipping protection.
+    /// 缩放 PCM 样本能量并防止削波。
     static std::vector<int16_t> adjust_energy(
         const std::vector<int16_t>& audio,
         float energy_factor);
 
     // 简单的时间拉伸（改变速度但保持基频）
-    /// Adjusts PCM duration by a stretch factor.
+    /// 按拉伸系数调整 PCM 音频时长。
     static std::vector<int16_t> time_stretch(
         const std::vector<int16_t>& audio,
         float stretch_factor);

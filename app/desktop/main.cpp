@@ -62,7 +62,7 @@ struct ProcessFinished {
     std::wstring message;
 };
 
-/// Quotes and escapes a Windows command-line argument.
+/// 为 Windows 命令行参数添加引号并转义特殊字符。
 std::wstring quote_argument(const std::wstring& value) {
     std::wstring result = L"\"";
     size_t backslashes = 0;
@@ -84,14 +84,14 @@ std::wstring quote_argument(const std::wstring& value) {
     return result;
 }
 
-/// Returns the absolute path of the running desktop executable.
+/// 返回当前桌面程序可执行文件的绝对路径。
 fs::path executable_path() {
     std::vector<wchar_t> buffer(32768);
     const DWORD length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
     return fs::path(std::wstring(buffer.data(), length));
 }
 
-/// Locates the project root by searching upward for the Whisper model.
+/// 通过向上查找 Whisper 模型来定位项目根目录。
 fs::path find_project_root() {
     fs::path current = executable_path().parent_path();
     for (int depth = 0; depth < 5; ++depth) {
@@ -102,7 +102,7 @@ fs::path find_project_root() {
     return fs::current_path();
 }
 
-/// Produces a filesystem-safe timestamp for generated recording names.
+/// 生成可安全用于录音文件名的时间戳。
 std::wstring timestamp() {
     SYSTEMTIME time{};
     GetLocalTime(&time);
@@ -113,14 +113,14 @@ std::wstring timestamp() {
     return value;
 }
 
-/// Formats elapsed seconds as a two-digit minute and second string.
+/// 将经过的秒数格式化为两位分钟和秒字符串。
 std::wstring format_duration(int seconds) {
     wchar_t text[16]{};
     swprintf(text, 16, L"%02d:%02d", seconds / 60, seconds % 60);
     return text;
 }
 
-/// Writes captured mono PCM samples as a standard 16 kHz WAV file.
+/// 将录制的单声道 PCM 样本写入标准 16 kHz WAV 文件。
 bool write_wav_file(const fs::path& path, const std::vector<int16_t>& samples) {
     std::ofstream stream(path, std::ios::binary);
     if (!stream) return false;
@@ -151,7 +151,7 @@ bool write_wav_file(const fs::path& path, const std::vector<int16_t>& samples) {
     return stream.good();
 }
 
-/// Performs a case-insensitive substring check for device-name ranking.
+/// 执行不区分大小写的子串检查，用于设备名称排序。
 bool contains_case_insensitive(std::wstring value, std::wstring needle) {
     std::transform(value.begin(), value.end(), value.begin(), ::towlower);
     std::transform(needle.begin(), needle.end(), needle.begin(), ::towlower);
@@ -163,7 +163,7 @@ struct WavPlaybackData {
     std::vector<char> samples;
 };
 
-/// Loads WAV format metadata and PCM bytes for WinMM playback.
+/// 加载 WAV 格式信息和 PCM 数据，供 WinMM 播放。
 bool load_wav_for_playback(const fs::path& path, WavPlaybackData& wav) {
     std::ifstream stream(path, std::ios::binary);
     if (!stream) return false;
@@ -206,13 +206,13 @@ bool load_wav_for_playback(const fs::path& path, WavPlaybackData& wav) {
     return has_format && has_data && wav.format.wFormatTag == WAVE_FORMAT_PCM && !wav.samples.empty();
 }
 
-/// Posts an asynchronous playback error message to the main window.
+/// 向主窗口异步发送播放错误消息。
 void post_playback_error(HWND window, const wchar_t* message) {
     auto* text = new std::wstring(message);
     if (!PostMessageW(window, WM_APP_PLAYBACK_ERROR, 0, reinterpret_cast<LPARAM>(text))) delete text;
 }
 
-/// Plays a WAV on the selected output device without blocking the UI thread.
+/// 在所选输出设备上播放 WAV，且不阻塞界面线程。
 void play_wav_async(HWND window, const fs::path& path, UINT device_id, uint64_t generation) {
     std::thread([window, path, device_id, generation]() {
         WavPlaybackData wav;
@@ -248,7 +248,7 @@ void play_wav_async(HWND window, const fs::path& path, UINT device_id, uint64_t 
 
 class AudioRecorder {
 public:
-    /// Opens the selected microphone and begins queued WinMM recording.
+    /// 打开所选麦克风并开始 WinMM 缓冲队列录音。
     bool start(HWND notify_window, UINT device_id, std::wstring& error) {
         if (recording_) return false;
         notify_window_ = notify_window;
@@ -293,7 +293,7 @@ public:
         return true;
     }
 
-    /// Stops recording, validates the captured signal, and saves it as WAV.
+    /// 停止录音、验证采集信号并保存为 WAV。
     bool stop_and_save(const fs::path& path, std::wstring& error) {
         if (!handle_) return false;
         recording_ = false;
@@ -336,18 +336,18 @@ public:
         return true;
     }
 
-    /// Reports whether the microphone capture session is active.
+    /// 返回麦克风采集会话是否处于活动状态。
     bool is_recording() const { return recording_; }
 
 private:
-    /// Forwards completed WinMM input buffers to the owning recorder instance.
+    /// 将完成的 WinMM 输入缓冲区转交给所属录音器实例。
     static void CALLBACK wave_callback(HWAVEIN, UINT message, DWORD_PTR instance, DWORD_PTR param1, DWORD_PTR) {
         if (message != WIM_DATA || instance == 0) return;
         auto* recorder = reinterpret_cast<AudioRecorder*>(instance);
         recorder->on_audio(reinterpret_cast<WAVEHDR*>(param1));
     }
 
-    /// Copies a completed input buffer and requeues it while recording continues.
+    /// 复制已完成的输入缓冲区，并在继续录音时重新加入队列。
     void on_audio(WAVEHDR* header) {
         if (header->dwBytesRecorded > 0) {
             const auto* input = reinterpret_cast<const int16_t*>(header->lpData);
@@ -373,7 +373,7 @@ private:
         }
     }
 
-    /// Releases WinMM headers, buffers, and the active microphone handle.
+    /// 释放 WinMM 头信息、缓冲区和活动麦克风句柄。
     void stop_internal() {
         recording_ = false;
         if (!handle_) return;
@@ -431,12 +431,12 @@ struct AppContext {
 
 AppContext app;
 
-/// Applies a shared font to a child control.
+/// 为子控件应用共享字体。
 void set_font(HWND control, HFONT font) {
     SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
 }
 
-/// Enumerates microphones and selects a preferred physical input device.
+/// 枚举麦克风并选择优先的物理输入设备。
 void populate_input_devices() {
     app.input_device_ids.clear();
     SendMessageW(app.input_device_combo, CB_RESETCONTENT, 0, 0);
@@ -467,7 +467,7 @@ void populate_input_devices() {
     SendMessageW(app.input_device_combo, CB_SETDROPPEDWIDTH, 420, 0);
 }
 
-/// Enumerates speakers and selects a preferred physical playback device.
+/// 枚举音箱并选择优先的物理播放设备。
 void populate_output_devices() {
     app.output_device_ids.clear();
     SendMessageW(app.output_device_combo, CB_RESETCONTENT, 0, 0);
@@ -498,14 +498,14 @@ void populate_output_devices() {
     SendMessageW(app.output_device_combo, CB_SETDROPPEDWIDTH, 420, 0);
 }
 
-/// Resolves the currently selected combo-box row to its WinMM device ID.
+/// 将组合框当前选中项解析为 WinMM 设备 ID。
 UINT selected_device(HWND combo, const std::vector<UINT>& device_ids) {
     const LRESULT selection = SendMessageW(combo, CB_GETCURSEL, 0, 0);
     if (selection == CB_ERR || static_cast<size_t>(selection) >= device_ids.size()) return WAVE_MAPPER;
     return device_ids[static_cast<size_t>(selection)];
 }
 
-/// Shows or hides output playback, folder, save, and path controls.
+/// 显示或隐藏播放、打开文件夹、保存和路径控件。
 void show_result_buttons(bool show) {
     const int command = show ? SW_SHOW : SW_HIDE;
     ShowWindow(app.play_button, command);
@@ -514,7 +514,7 @@ void show_result_buttons(bool show) {
     ShowWindow(app.output_path, command);
 }
 
-/// Switches controls between idle and active-recording states.
+/// 在空闲状态和录音状态之间切换界面控件。
 void set_recording_ui(bool recording) {
     SetWindowTextW(app.record_button, recording ? L"停止" : L"录音");
     SetWindowTextW(app.record_hint, recording ? L"再次点击结束录音并开始处理" : L"点击按钮开始讲话");
@@ -524,7 +524,7 @@ void set_recording_ui(bool recording) {
     InvalidateRect(app.record_button, nullptr, TRUE);
 }
 
-/// Locks recording settings and initializes processing progress feedback.
+/// 锁定录音设置并初始化处理进度反馈。
 void set_processing_ui() {
     app.processing = true;
     EnableWindow(app.record_button, FALSE);
@@ -538,13 +538,13 @@ void set_processing_ui() {
     show_result_buttons(false);
 }
 
-/// Delivers a thread-safe pipeline status update to the main window.
+/// 以线程安全方式向主窗口发送处理状态更新。
 void post_status(HWND window, const wchar_t* text, int progress) {
     auto* update = new ProcessStatus{text, progress};
     if (!PostMessageW(window, WM_APP_PROCESS_STATUS, 0, reinterpret_cast<LPARAM>(update))) delete update;
 }
 
-/// Runs the CLI detoxification pipeline in a hidden background process.
+/// 在隐藏的后台进程中运行命令行去毒流程。
 void run_pipeline_async(HWND window, fs::path input_path, fs::path output_path) {
     std::thread([window, input_path = std::move(input_path), output_path = std::move(output_path)]() {
         auto* finished = new ProcessFinished{};
@@ -638,7 +638,7 @@ void run_pipeline_async(HWND window, fs::path input_path, fs::path output_path) 
     }).detach();
 }
 
-/// Starts microphone capture using the selected recording device.
+/// 使用所选录音设备开始麦克风采集。
 void begin_recording(HWND window) {
     ++playback_generation;
     std::wstring error;
@@ -656,7 +656,7 @@ void begin_recording(HWND window) {
     show_result_buttons(false);
 }
 
-/// Finalizes microphone capture and launches silence redaction.
+/// 完成麦克风采集并启动静音处理。
 void finish_recording(HWND window) {
     KillTimer(window, RECORD_TIMER_ID);
     wchar_t temp_directory[MAX_PATH]{};
@@ -679,7 +679,7 @@ void finish_recording(HWND window) {
     run_pipeline_async(window, app.input_path, app.output_file);
 }
 
-/// Prompts for a destination and copies the processed WAV there.
+/// 提示选择目标位置，并复制处理后的 WAV 文件。
 void save_output_copy(HWND window) {
     if (app.output_file.empty() || !fs::exists(app.output_file)) return;
     wchar_t file_name[MAX_PATH]{};
@@ -699,7 +699,7 @@ void save_output_copy(HWND window) {
     }
 }
 
-/// Repositions all controls to fit the current client area.
+/// 根据当前客户区大小重新排列所有控件。
 void layout_controls(int width, int height) {
     const int margin = 28;
     const int gap = 14;
@@ -752,7 +752,7 @@ void layout_controls(int width, int height) {
     MoveWindow(app.save_button, right_x + 40 + button_width * 2, content_top + content_height - 52, button_width, 34, TRUE);
 }
 
-/// Paints the decorative waveform control and handles its window messages.
+/// 绘制波形控件并处理其窗口消息。
 LRESULT CALLBACK waveform_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     if (message == WM_PAINT) {
         PAINTSTRUCT paint{};
@@ -781,7 +781,7 @@ LRESULT CALLBACK waveform_proc(HWND window, UINT message, WPARAM wparam, LPARAM 
     return DefWindowProcW(window, message, wparam, lparam);
 }
 
-/// Handles main-window creation, commands, painting, progress, and shutdown.
+/// 处理主窗口创建、命令、绘制、进度更新和关闭操作。
 LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
     case WM_CREATE: {
@@ -1007,7 +1007,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
 
 } // namespace
 
-/// Registers window classes and starts the native Windows message loop.
+/// 注册窗口类并启动原生 Windows 消息循环。
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show_command) {
     INITCOMMONCONTROLSEX controls{sizeof(INITCOMMONCONTROLSEX), ICC_PROGRESS_CLASS | ICC_STANDARD_CLASSES};
     InitCommonControlsEx(&controls);

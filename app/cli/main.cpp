@@ -19,7 +19,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
-/// Returns whether a path points to a supported audio input format.
+/// 判断路径是否指向受支持的音频输入格式。
 bool is_supported_audio_file(const fs::path& path) {
     if (!fs::is_regular_file(path)) {
         return false;
@@ -39,7 +39,7 @@ bool is_supported_audio_file(const fs::path& path) {
            ext == ".wma";
 }
 
-/// Finds the first supported audio file inside a directory.
+/// 查找目录中的第一个受支持音频文件。
 std::string find_first_audio_file_in_directory(const fs::path& dir) {
     if (!fs::exists(dir) || !fs::is_directory(dir)) {
         return "";
@@ -54,7 +54,7 @@ std::string find_first_audio_file_in_directory(const fs::path& dir) {
     return "";
 }
 
-/// Resolves an explicit file, a directory, or a default test input to an audio file.
+/// 将指定文件、目录或默认测试输入解析为实际音频文件。
 std::string resolve_audio_path_for_analysis(const std::string& audio_path) {
     if (!audio_path.empty()) {
         fs::path p(audio_path);
@@ -77,12 +77,12 @@ std::string resolve_audio_path_for_analysis(const std::string& audio_path) {
     return find_first_audio_file_in_directory("tests/input");
 }
 
-/// Quotes a file path for safe use as a command-line argument.
+/// 为文件路径添加引号，使其可安全用作命令行参数。
 std::string quote_file_arg(const std::string& s) {
     return "\"" + s + "\"";
 }
 
-/// Quotes an executable path only when it contains whitespace.
+/// 仅在可执行文件路径包含空白字符时添加引号。
 std::string quote_executable_if_needed(const std::string& s) {
     if (s.find(' ') != std::string::npos || s.find('\t') != std::string::npos) {
         return "\"" + s + "\"";
@@ -90,7 +90,7 @@ std::string quote_executable_if_needed(const std::string& s) {
     return s;
 }
 
-/// Converts backslashes to forward slashes for Windows command execution.
+/// 将反斜杠转换为正斜杠，便于 Windows 命令执行。
 std::string normalize_path_for_cmd(std::string s) {
     for (char& c : s) {
         if (c == '\\') {
@@ -100,7 +100,7 @@ std::string normalize_path_for_cmd(std::string s) {
     return s;
 }
 
-/// Converts clean source audio to a PCM WAV without changing its spoken content.
+/// 将干净的源音频转换为 PCM WAV，同时保持语音内容不变。
 void convert_original_audio_to_wav(
     const std::string& input_path,
     const std::string& output_path,
@@ -136,7 +136,7 @@ struct MuteRange {
     double end_seconds = 0.0;
 };
 
-/// Maps toxic transcript offsets to padded, merged audio timestamp ranges.
+/// 将有毒文本偏移映射为带边界扩展且已合并的音频时间范围。
 std::vector<MuteRange> build_mute_ranges(
     const WhisperResult& transcription,
     const std::vector<nlp::ToxicityMatch>& matches) {
@@ -206,7 +206,7 @@ std::vector<MuteRange> build_mute_ranges(
     return merged;
 }
 
-/// Writes a WAV that preserves the source except for zero-volume toxic ranges.
+/// 写出 WAV 文件，仅将有毒范围静音并保留其他原始音频。
 void mute_audio_ranges_to_wav(
     const std::string& input_path,
     const std::string& output_path,
@@ -243,7 +243,7 @@ void mute_audio_ranges_to_wav(
 
 } // namespace
 
-/// Prints command-line options and examples.
+/// 输出命令行选项和使用示例。
 void print_usage(const char* program_name) {
     std::cout << "Usage: " << program_name << " [options] [whisper_model] [audio_file]\n\n";
     std::cout << "Options:\n";
@@ -259,7 +259,7 @@ void print_usage(const char* program_name) {
     std::cout << "  " << program_name << " --output clean.wav models/ggml-small.bin audio.mp3\n";
 }
 
-/// Runs transcription, toxicity detection, and timestamp-based silence redaction.
+/// 执行语音转写、有毒内容检测和基于时间戳的静音处理。
 int main(int argc, char** argv) {
     try {
         log_info("=== Voice Detoxification Complete Pipeline ===");

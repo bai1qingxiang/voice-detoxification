@@ -31,12 +31,12 @@ struct ToxicityResult {
 
 class ToxicityDetector {
 public:
-    /// Initializes the built-in English toxicity patterns.
+    /// 初始化内置英文毒性模式。
     ToxicityDetector();
-    /// Releases detector resources.
+    /// 释放检测器资源。
     ~ToxicityDetector();
 
-    /// Detects toxic words and phrases in input text.
+    /// 检测输入文本中的有毒单词和短语。
     ToxicityResult analyze(const std::string& text);
 
 private:
@@ -49,15 +49,15 @@ private:
     std::vector<ToxicWord> toxic_words_;
     std::unordered_map<std::string, std::vector<size_t>> word_index_;
 
-    /// Populates the built-in pattern list.
+    /// 填充内置模式列表。
     void initialize_toxic_wordlist();
-    /// Builds the normalized word lookup table.
+    /// 构建规范化单词查找表。
     void index_words();
-    /// Normalizes input for matching.
+    /// 规范化用于匹配的输入文本。
     std::string normalize_text(const std::string& text) const;
-    /// Finds non-overlapping matches and their original offsets.
+    /// 查找不重叠的匹配项及其原始偏移。
     std::vector<ToxicityMatch> find_toxic_words(const std::string& normalized, const std::string& original);
-    /// Computes the maximum severity of all matches.
+    /// 计算所有匹配项中的最高严重程度。
     ToxicityLevel compute_overall_level(const std::vector<ToxicityMatch>& matches);
 };
 

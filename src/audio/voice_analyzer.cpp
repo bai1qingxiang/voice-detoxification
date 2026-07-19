@@ -13,7 +13,7 @@ namespace audio {
 
 namespace {
 
-/// Estimates fundamental frequency from a normalized autocorrelation peak.
+/// 根据归一化自相关峰值估算基频。
 float autocorrelation_pitch_detection(
     const std::vector<float>& signal,
     int sample_rate) {
@@ -81,7 +81,7 @@ float autocorrelation_pitch_detection(
     return fundamental_freq;
 }
 
-/// Reads 16-bit PCM WAV samples and returns them with their sample rate.
+/// 读取 16 位 PCM WAV 样本，并同时返回采样率。
 std::pair<std::vector<int16_t>, int> read_wav_file(const std::string& path) {
     std::ifstream file(path, std::ios::binary);
     if (!file) {
@@ -182,7 +182,7 @@ std::pair<std::vector<int16_t>, int> read_wav_file(const std::string& path) {
 
 } // namespace
 
-/// Extracts basic pitch, energy, and spectral characteristics from PCM audio.
+/// 从 PCM 音频中提取基础音高、能量和频谱特征。
 VoiceCharacteristics VoiceAnalyzer::analyze(
     const std::vector<int16_t>& pcm_samples,
     int sample_rate) {
@@ -224,13 +224,13 @@ VoiceCharacteristics VoiceAnalyzer::analyze(
     return chars;
 }
 
-/// Loads a WAV file and analyzes its voice characteristics.
+/// 加载 WAV 文件并分析其声音特征。
 VoiceCharacteristics VoiceAnalyzer::analyze_file(const std::string& wav_path) {
     auto [samples, sample_rate] = read_wav_file(wav_path);
     return analyze(samples, sample_rate);
 }
 
-/// Computes root-mean-square energy for each complete audio frame.
+/// 计算每个完整音频帧的均方根能量。
 std::vector<float> VoiceAnalyzer::compute_energy(
     const std::vector<int16_t>& samples,
     int frame_size) {
@@ -251,7 +251,7 @@ std::vector<float> VoiceAnalyzer::compute_energy(
     return energy;
 }
 
-/// Estimates the dominant voice pitch of PCM samples.
+/// 估算 PCM 样本中的主要语音音高。
 float VoiceAnalyzer::estimate_fundamental_frequency(
     const std::vector<int16_t>& samples,
     int sample_rate) {
@@ -268,7 +268,7 @@ float VoiceAnalyzer::estimate_fundamental_frequency(
     return autocorrelation_pitch_detection(float_samples, sample_rate);
 }
 
-/// Computes the normalized zero-crossing rate of PCM samples.
+/// 计算 PCM 样本的归一化过零率。
 float VoiceAnalyzer::compute_zcr(const std::vector<int16_t>& samples) {
     if (samples.size() < 2) {
         return 0.0f;
@@ -285,7 +285,7 @@ float VoiceAnalyzer::compute_zcr(const std::vector<int16_t>& samples) {
     return static_cast<float>(zero_crossings) / (samples.size() - 1);
 }
 
-/// Approximates spectral centroid from zero-crossing rate.
+/// 根据过零率近似计算频谱质心。
 float VoiceAnalyzer::compute_spectral_centroid(
     const std::vector<int16_t>& samples,
     int sample_rate) {
@@ -294,7 +294,7 @@ float VoiceAnalyzer::compute_spectral_centroid(
     return zcr * sample_rate / 2.0f;
 }
 
-/// Applies a bounded loudness match while preserving synthesized timing.
+/// 在保留音频时序的同时应用有限范围的响度匹配。
 std::vector<int16_t> VoiceConverter::transfer_voice_characteristics(
     const std::vector<int16_t>& target_audio,
     const VoiceCharacteristics& source_characteristics,
@@ -322,7 +322,7 @@ std::vector<int16_t> VoiceConverter::transfer_voice_characteristics(
     return adjust_energy(target_audio, energy_factor);
 }
 
-/// Changes pitch through linear resampling of the PCM stream.
+/// 通过线性重采样 PCM 数据调整音高。
 std::vector<int16_t> VoiceConverter::adjust_pitch(
     const std::vector<int16_t>& audio,
     float pitch_shift_semitones,
@@ -347,7 +347,7 @@ std::vector<int16_t> VoiceConverter::adjust_pitch(
     return resampled;
 }
 
-/// Changes playback speed through linear sample interpolation.
+/// 通过线性样本插值调整播放速度。
 std::vector<int16_t> VoiceConverter::adjust_speed(
     const std::vector<int16_t>& audio,
     float speed_factor) {
@@ -369,7 +369,7 @@ std::vector<int16_t> VoiceConverter::adjust_speed(
     return result;
 }
 
-/// Scales sample amplitudes with 16-bit clipping protection.
+/// 缩放样本振幅，并提供 16 位削波保护。
 std::vector<int16_t> VoiceConverter::adjust_energy(
     const std::vector<int16_t>& audio,
     float energy_factor) {
@@ -382,7 +382,7 @@ std::vector<int16_t> VoiceConverter::adjust_energy(
     return result;
 }
 
-/// Stretches or compresses duration by delegating to speed adjustment.
+/// 通过速度调整来拉伸或压缩音频时长。
 std::vector<int16_t> VoiceConverter::time_stretch(
     const std::vector<int16_t>& audio,
     float stretch_factor) {

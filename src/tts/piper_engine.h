@@ -15,24 +15,24 @@ struct TTSResult {
 
 class PiperEngine {
 public:
-    /// Validates a Piper voice model path.
+    /// 验证 Piper 语音模型路径。
     explicit PiperEngine(const std::string& model_path);
-    /// Releases Piper engine resources.
+    /// 释放 Piper 引擎资源。
     ~PiperEngine();
 
-    /// Prevents copying Piper model ownership state.
+    /// 禁止复制 Piper 模型的所有权状态。
     PiperEngine(const PiperEngine&) = delete;
-    /// Prevents copy assignment of Piper model ownership state.
+    /// 禁止对 Piper 模型所有权状态执行复制赋值。
     PiperEngine& operator=(const PiperEngine&) = delete;
 
-    /// Reports whether the engine has a usable voice model.
+    /// 返回引擎是否具有可用的语音模型。
     bool is_loaded() const;
 
-    /// Synthesizes UTF-8 text into mono PCM audio.
+    /// 将 UTF-8 文本合成为单声道 PCM 音频。
     TTSResult synthesize(const std::string& text);
 
     // Get available voices/speakers
-    /// Returns supported built-in English voice identifiers.
+    /// 返回受支持的内置英文语音标识符。
     std::vector<std::string> get_available_voices() const;
 
 private:

@@ -1,7 +1,7 @@
 #include "logger.h"
 #include <iostream>
 
-/// Writes an informational message with a consistent console prefix.
+/// 使用统一的控制台前缀输出信息消息。
 void log_info(const char* message) {
     std::cout << "[INFO] " << message << std::endl;
 }

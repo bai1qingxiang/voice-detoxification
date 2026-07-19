@@ -13,12 +13,12 @@ namespace fs = std::filesystem;
 
 namespace {
 
-/// Quotes a filesystem path for an FFmpeg command.
+/// 为 FFmpeg 命令中的文件路径添加引号。
 std::string quote_file_arg(const std::string& s) {
     return "\"" + s + "\"";
 }
 
-/// Quotes an executable path when whitespace requires it.
+/// 在可执行文件路径包含空白字符时添加引号。
 std::string quote_executable_if_needed(const std::string& s) {
     if (s.find(' ') != std::string::npos || s.find('\t') != std::string::npos) {
         return "\"" + s + "\"";
@@ -26,7 +26,7 @@ std::string quote_executable_if_needed(const std::string& s) {
     return s;
 }
 
-/// Normalizes Windows path separators for command-line use.
+/// 规范化 Windows 路径分隔符，便于命令行使用。
 std::string normalize_path_for_cmd(std::string s) {
     for (char& c : s) {
         if (c == '\\') {
@@ -36,7 +36,7 @@ std::string normalize_path_for_cmd(std::string s) {
     return s;
 }
 
-/// Creates a collision-resistant temporary WAV path.
+/// 创建不易发生命名冲突的临时 WAV 路径。
 std::string make_temp_wav_path() {
     const fs::path temp_dir = fs::temp_directory_path();
 
@@ -54,7 +54,7 @@ std::string make_temp_wav_path() {
 
 namespace audio {
 
-/// Uses FFmpeg to decode arbitrary input audio to mono 16 kHz PCM WAV.
+/// 使用 FFmpeg 将任意输入音频解码为单声道 16 kHz PCM WAV。
 DecodeResult decode_to_mono16k_wav(
     const std::string& input_path,
     const std::string& ffmpeg_path) {
@@ -99,7 +99,7 @@ DecodeResult decode_to_mono16k_wav(
     return DecodeResult{output_wav};
 }
 
-/// Best-effort removes a temporary file without propagating cleanup errors.
+/// 尽力删除临时文件，并忽略清理过程中的异常。
 void remove_file_if_exists(const std::string& path) noexcept {
     try {
         if (!path.empty() && fs::exists(path)) {

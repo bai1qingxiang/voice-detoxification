@@ -8,9 +8,9 @@ namespace nlp {
 
 class TextDetoxifier {
 public:
-    /// Initializes a detoxifier backed by the built-in toxicity detector.
+    /// 初始化使用内置毒性检测器的去毒器。
     TextDetoxifier();
-    /// Releases detoxifier resources.
+    /// 释放去毒器资源。
     ~TextDetoxifier();
 
     struct DetoxifiedText {
@@ -23,15 +23,15 @@ public:
         std::string report;
     };
 
-    /// Detects toxic text spans and returns redaction metadata and a report.
+    /// 检测有毒文本范围，并返回静音元数据和报告。
     DetoxifiedText detoxify(const std::string& text);
-    /// Replaces detected character spans with asterisk markers for display.
+    /// 将检测到的字符范围替换为用于显示的星号标记。
     std::string apply_censoring(const std::string& text, const ToxicityResult& analysis);
 
 private:
     ToxicityDetector detector_;
 
-    /// Formats a human-readable detoxification report.
+    /// 格式化便于阅读的去毒报告。
     std::string build_report(const ToxicityResult& original, int censored);
 };
 

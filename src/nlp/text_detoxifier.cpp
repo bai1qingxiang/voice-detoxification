@@ -8,7 +8,7 @@ namespace nlp {
 
 namespace {
 
-/// Converts a toxicity enum value into a human-readable report label.
+/// 将毒性枚举值转换为便于阅读的报告标签。
 std::string toxicity_to_string(ToxicityLevel level) {
     switch (level) {
         case ToxicityLevel::CLEAN: return "CLEAN";
@@ -21,13 +21,13 @@ std::string toxicity_to_string(ToxicityLevel level) {
 
 } // namespace
 
-/// Initializes the text detoxifier and its toxicity detector.
+/// 初始化文本去毒器及其毒性检测器。
 TextDetoxifier::TextDetoxifier() = default;
 
-/// Releases resources owned by the text detoxifier.
+/// 释放文本去毒器持有的资源。
 TextDetoxifier::~TextDetoxifier() = default;
 
-/// Replaces detected toxic character spans with equal-length asterisks.
+/// 将检测到的有毒字符范围替换为等长星号。
 std::string TextDetoxifier::apply_censoring(
     const std::string& text,
     const ToxicityResult& analysis) {
@@ -51,7 +51,7 @@ std::string TextDetoxifier::apply_censoring(
     return result;
 }
 
-/// Detects toxic spans and prepares text markers plus audio-redaction metadata.
+/// 检测有毒范围，并生成文本标记和音频静音元数据。
 TextDetoxifier::DetoxifiedText TextDetoxifier::detoxify(const std::string& text) {
     DetoxifiedText result;
     result.original = text;
@@ -83,7 +83,7 @@ TextDetoxifier::DetoxifiedText TextDetoxifier::detoxify(const std::string& text)
     return result;
 }
 
-/// Builds a detailed text report for detected ranges and severity.
+/// 根据检测范围和严重程度生成详细文本报告。
 std::string TextDetoxifier::build_report(
     const ToxicityResult& original,
     int censored) {

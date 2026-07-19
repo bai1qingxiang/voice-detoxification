@@ -1,4 +1,4 @@
 #pragma once
 
-/// Writes an informational message to standard output.
+/// 向标准输出写入信息消息。
 void log_info(const char* message);

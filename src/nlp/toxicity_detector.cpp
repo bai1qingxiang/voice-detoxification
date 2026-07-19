@@ -9,14 +9,14 @@ namespace nlp {
 
 namespace {
 
-/// Converts ASCII text to lowercase for case-insensitive matching.
+/// 将 ASCII 文本转换为小写，以便进行不区分大小写的匹配。
 std::string to_lower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
         [](unsigned char c) { return std::tolower(c); });
     return s;
 }
 
-/// Removes punctuation while preserving letters, digits, and spaces.
+/// 删除标点符号，同时保留字母、数字和空格。
 std::string remove_non_alphanumeric(const std::string& s) {
     std::string result;
     for (char c : s) {
@@ -29,16 +29,16 @@ std::string remove_non_alphanumeric(const std::string& s) {
 
 } // namespace
 
-/// Initializes the built-in English toxicity patterns and lookup index.
+/// 初始化内置英文毒性模式和查找索引。
 ToxicityDetector::ToxicityDetector() {
     initialize_toxic_wordlist();
     index_words();
 }
 
-/// Releases resources owned by the toxicity detector.
+/// 释放毒性检测器持有的资源。
 ToxicityDetector::~ToxicityDetector() = default;
 
-/// Populates phrase and word patterns with severity and category metadata.
+/// 填充短语和单词模式，并记录严重程度及类别元数据。
 void ToxicityDetector::initialize_toxic_wordlist() {
     toxic_words_ = {
         // Phrase-level patterns are checked before overlapping single words so
@@ -102,7 +102,7 @@ void ToxicityDetector::initialize_toxic_wordlist() {
     };
 }
 
-/// Indexes normalized patterns for efficient token lookup.
+/// 为规范化模式建立索引，以便高效查找词元。
 void ToxicityDetector::index_words() {
     for (size_t i = 0; i < toxic_words_.size(); ++i) {
         const std::string normalized = to_lower(toxic_words_[i].word);
@@ -110,14 +110,14 @@ void ToxicityDetector::index_words() {
     }
 }
 
-/// Normalizes input text for toxicity pattern matching.
+/// 规范化输入文本，以便匹配毒性模式。
 std::string ToxicityDetector::normalize_text(const std::string& text) const {
     std::string normalized = to_lower(text);
     normalized = remove_non_alphanumeric(normalized);
     return normalized;
 }
 
-/// Finds non-overlapping toxic words and phrases with original text offsets.
+/// 查找不重叠的有毒单词和短语，并保留原始文本偏移。
 std::vector<ToxicityMatch> ToxicityDetector::find_toxic_words(
     const std::string& normalized,
     const std::string& original) {
@@ -211,7 +211,7 @@ std::vector<ToxicityMatch> ToxicityDetector::find_toxic_words(
     return non_overlapping;
 }
 
-/// Returns the highest toxicity severity among all detected matches.
+/// 返回所有检测结果中的最高毒性严重程度。
 ToxicityLevel ToxicityDetector::compute_overall_level(
     const std::vector<ToxicityMatch>& matches) {
 
@@ -251,7 +251,7 @@ ToxicityLevel ToxicityDetector::compute_overall_level(
     return max_level;
 }
 
-/// Analyzes text and returns severity, confidence, matches, and display censoring.
+/// 分析文本并返回严重程度、置信度、匹配项和显示用屏蔽文本。
 ToxicityResult ToxicityDetector::analyze(const std::string& text) {
     ToxicityResult result;
     result.original_text = text;

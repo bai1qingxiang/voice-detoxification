@@ -13,7 +13,7 @@ namespace tts {
 
 namespace {
 
-/// Creates a unique temporary output path for Piper synthesis.
+/// 为 Piper 语音合成创建唯一的临时输出路径。
 std::string create_temp_wav_path() {
     static int counter = 0;
     const fs::path temp_dir = fs::temp_directory_path();
@@ -21,7 +21,7 @@ std::string create_temp_wav_path() {
     return out.string();
 }
 
-/// Writes a basic mono 16-bit PCM WAV header.
+/// 写入基础的单声道 16 位 PCM WAV 文件头。
 void write_wav_header(std::ofstream& file,
                       int sample_rate,
                       int num_samples,
@@ -53,7 +53,7 @@ void write_wav_header(std::ofstream& file,
     file.write(reinterpret_cast<const char*>(&subchunk2_size), 4);
 }
 
-/// Quotes and escapes a command-line argument for the Python process.
+/// 为 Python 进程的命令行参数添加引号并进行转义。
 std::string quote_arg(const std::string& value) {
     std::string quoted = "\"";
     for (char c : value) {
@@ -67,7 +67,7 @@ std::string quote_arg(const std::string& value) {
     return quoted;
 }
 
-/// Reads PCM samples from the data chunk of a generated WAV file.
+/// 从生成的 WAV 数据块中读取 PCM 样本。
 std::vector<int16_t> read_wav_samples(const std::string& wav_path) {
     std::ifstream file(wav_path, std::ios::binary);
     if (!file) {
@@ -108,7 +108,7 @@ std::vector<int16_t> read_wav_samples(const std::string& wav_path) {
 
 } // namespace
 
-/// Validates and stores the Piper voice model path.
+/// 验证并保存 Piper 语音模型路径。
 PiperEngine::PiperEngine(const std::string& model_path)
     : model_path_(model_path) {
     if (!fs::exists(model_path)) {
@@ -119,15 +119,15 @@ PiperEngine::PiperEngine(const std::string& model_path)
     loaded_ = true;
 }
 
-/// Releases Piper engine resources.
+/// 释放 Piper 引擎资源。
 PiperEngine::~PiperEngine() = default;
 
-/// Reports whether the Piper model path was validated successfully.
+/// 返回 Piper 模型路径是否已成功验证。
 bool PiperEngine::is_loaded() const {
     return loaded_;
 }
 
-/// Invokes Piper through Python and returns synthesized PCM samples.
+/// 通过 Python 调用 Piper，并返回合成的 PCM 样本。
 TTSResult PiperEngine::synthesize(const std::string& text) {
     if (!is_loaded()) {
         throw std::runtime_error("Piper model is not loaded.");
@@ -238,7 +238,7 @@ except Exception as e:
     return result;
 }
 
-/// Lists the supported built-in English Piper voice identifiers.
+/// 列出受支持的内置英文 Piper 语音标识符。
 std::vector<std::string> PiperEngine::get_available_voices() const {
     return {
         "en_US-libritts-high",

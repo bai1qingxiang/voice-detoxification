@@ -27,7 +27,7 @@ struct WavData {
     std::vector<float> pcmf32;
 };
 
-/// Reads a fixed-size little-endian value from a binary stream.
+/// 从二进制流读取固定大小的小端值。
 template <typename T>
 T read_little_endian(std::ifstream& in) {
     T value{};
@@ -38,7 +38,7 @@ T read_little_endian(std::ifstream& in) {
     return value;
 }
 
-/// Returns whether a path uses a supported audio file extension.
+/// 判断路径是否使用受支持的音频文件扩展名。
 bool is_supported_audio_file(const fs::path& path) {
     if (!fs::is_regular_file(path)) {
         return false;
@@ -58,7 +58,7 @@ bool is_supported_audio_file(const fs::path& path) {
            ext == ".wma";
 }
 
-/// Finds the first supported audio file in a directory.
+/// 查找目录中的第一个受支持音频文件。
 std::string find_first_audio_file_in_directory(const fs::path& dir) {
     if (!fs::exists(dir) || !fs::is_directory(dir)) {
         return "";
@@ -73,7 +73,7 @@ std::string find_first_audio_file_in_directory(const fs::path& dir) {
     return "";
 }
 
-/// Resolves an explicit input or searches the default audio directories.
+/// 解析指定输入，或搜索默认音频目录。
 std::string resolve_input_audio_path(const std::string& audio_path) {
     // 1) 传入的是存在的文件：直接用
     if (!audio_path.empty()) {
@@ -117,7 +117,7 @@ std::string resolve_input_audio_path(const std::string& audio_path) {
         "No supported audio file found in tests/inputs or tests/input.");
 }
 
-/// Parses a mono 16 kHz 16-bit PCM WAV into floating-point Whisper samples.
+/// 将单声道 16 kHz 16 位 PCM WAV 解析为 Whisper 浮点样本。
 WavData load_wav_pcm_s16le_mono_16k(const std::string& path) {
     std::ifstream in(path, std::ios::binary);
     if (!in) {
@@ -223,7 +223,7 @@ WavData load_wav_pcm_s16le_mono_16k(const std::string& path) {
     return out;
 }
 
-/// Chooses an explicit thread count or falls back to available hardware threads.
+/// 选择指定线程数，未指定时使用可用硬件线程数。
 int resolve_thread_count(int requested) {
     if (requested > 0) {
         return requested;
@@ -237,7 +237,7 @@ int resolve_thread_count(int requested) {
     return static_cast<int>(std::max(1u, hc));
 }
 
-/// Removes DC offset and safely normalizes speech RMS for recognition.
+/// 去除直流偏置，并安全归一化语音均方根电平以供识别。
 void normalize_speech_level(std::vector<float>& samples) {
     if (samples.empty()) return;
 
@@ -266,7 +266,7 @@ void normalize_speech_level(std::vector<float>& samples) {
 
 } // namespace
 
-/// Loads a Whisper model into a CPU-backed recognition context.
+/// 将 Whisper 模型加载到基于 CPU 的识别上下文中。
 WhisperEngine::WhisperEngine(const std::string& model_path) {
     whisper_context_params cparams = whisper_context_default_params();
 
@@ -280,7 +280,7 @@ WhisperEngine::WhisperEngine(const std::string& model_path) {
     }
 }
 
-/// Frees the native Whisper recognition context.
+/// 释放原生 Whisper 识别上下文。
 WhisperEngine::~WhisperEngine() {
     if (ctx_) {
         whisper_free(ctx_);
@@ -288,12 +288,12 @@ WhisperEngine::~WhisperEngine() {
     }
 }
 
-/// Reports whether the Whisper model context was loaded successfully.
+/// 返回 Whisper 模型上下文是否成功加载。
 bool WhisperEngine::is_loaded() const {
     return ctx_ != nullptr;
 }
 
-/// Transcribes normalized WAV audio and records segment and token timestamps.
+/// 转写规范化 WAV 音频，并记录分段和词元时间戳。
 WhisperResult WhisperEngine::transcribe_wav(const std::string& wav_path, int n_threads) const {
     if (!ctx_) {
         throw std::runtime_error("Whisper model is not loaded.");
@@ -391,7 +391,7 @@ WhisperResult WhisperEngine::transcribe_wav(const std::string& wav_path, int n_t
     return result;
 }
 
-/// Decodes a general audio file, transcribes it, and removes temporary audio.
+/// 解码通用音频文件、执行转写并删除临时音频。
 WhisperResult WhisperEngine::transcribe_audio_file(
     const std::string& audio_path,
     const std::string& ffmpeg_path,
